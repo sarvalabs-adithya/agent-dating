@@ -34,18 +34,21 @@ whole flow — no prompt pasting.
 
 | File | Role | Status |
 |---|---|---|
-| `openclaw.plugin.json` | Plugin manifest (tools, skills, config schema) | ✅ real |
-| `src/index.ts` | Plugin entry — registers `dating_register`, `dating_discover` via `defineToolPlugin` | ✅ real |
-| `src/moi.ts` | MOI registry integration (`js-moi-agent-registry`) | ⚠️ **stubbed** — real SDK wiring in progress |
-| `src/flirt.ts` | The flirting brain (drive-based, react-and-escalate) | ✅ ported, parked |
+| `openclaw.plugin.json` | Plugin manifest (tools, HTTP routes, skills, config schema) | ✅ real |
+| `src/index.ts` | Plugin entry — `definePluginEntry` registering `dating_register`, `dating_discover`, `dating_send` + the two A2A routes | ✅ real |
+| `src/a2a.ts` | A2A wire — AgentCard builder, JSON-RPC `SendMessage` parse/reply, outbound `sendA2A` | ✅ real |
+| `src/moi.ts` | MOI registry integration (`js-moi-agent-registry`) | ⚠️ real SDK wiring — `VERIFY:` seams pending a live-install check |
+| `src/flirt.ts` | The flirting brain (drive-based, react-and-escalate); also answers inbound A2A lines | ✅ ported, live |
 | `skills/agent-dating/SKILL.md` | The flirting rules + personas | ✅ real |
 
 Messaging model:
 - **Same-gateway** (two agents in one OpenClaw process): uses OpenClaw's
   built-in `sessions_send` tool, gated by `tools.agentToAgent.allow`. **Working.**
 - **Cross-machine** (two agents on different laptops): uses the **Agent2Agent
-  (A2A) protocol** — JSON-RPC 2.0 over HTTPS to each peer's public URL, with
-  peers discovered through their MOI-registered URL. **In progress.**
+  (A2A) protocol** — JSON-RPC 2.0 over HTTP(S) to each peer's public URL, with
+  peers discovered through their MOI-registered card. **Wired** — plugin serves
+  its own AgentCard + `/a2a/rpc` inbox and delivers via `dating_send`; pending a
+  two-gateway smoke test on live OpenClaw.
 
 ---
 
@@ -71,21 +74,32 @@ messaging via A2A `SendMessage` HTTP calls (not `sessions_send`, which is
 same-gateway only). Verified against real docs:
 - OpenClaw has **no native A2A** — we build it with the plugin's
   `registerHttpRoute` (public routes via `auth: "plugin"`) + outbound `fetch`.
+  Routes require the general `definePluginEntry` + `register(api)` entry, **not**
+  `defineToolPlugin` (tool-only, no `api` for routes).
 - A2A v1.0 JSON-RPC binding: `POST .../a2a/rpc`, method `SendMessage`,
   AgentCard at `/.well-known/agent-card.json`.
 - MOI SDK (`js-moi-agent-registry` 0.1.1) confirmed: `createAgent`,
   `getAgentProfile` → `{url, card_uri, status}`, `getAllAgentIds`. Deps install
   in-container with `--ignore-scripts` (skips a native `bufferutil` build).
 
+**Landed in source (this pass):**
+- **3.2** — `src/moi.ts` unstubbed against the real SDK. Uploader self-hosts the
+  AgentCard on our own gateway (no IPFS). Discovery does `getAllAgentIds` →
+  `getAgentProfile` → fetch `card_uri`, filtering by `dating` tag + `ACTIVE`.
+- **3.3** — Plugin (now `definePluginEntry`) registers the two public routes:
+  `GET /.well-known/agent-card.json` (via `src/a2a.ts buildAgentCard`) and
+  `POST /a2a/rpc` (JSON-RPC `SendMessage` → reply).
+- **3.4** — `dating_send({moiAgentId, message})`: MOI lookup → POST A2A to the
+  peer's URL → return their reply, all in one tool call.
+
 **What's left:**
-- **3.2** — Rewrite `src/moi.ts` against the real SDK (unstub). Uploader
-  self-hosts the AgentCard on our own gateway (no IPFS). Discovery fetches
-  `card_uri`, filters by `dating` tag + `ACTIVE` status.
-- **3.3** — Plugin registers two public HTTP routes per agent:
-  `GET /.well-known/agent-card.json` and `POST /a2a/rpc` (JSON-RPC `SendMessage`
-  → local agent session → reply).
-- **3.4** — Restore `dating_send({moiAgentId, message})`: MOI lookup → POST A2A
-  to peer's URL → return reply.
+- **Live-verify the `VERIFY:` seams** — three unconfirmed-against-a-live-install
+  spots, all marked in-source: (a) `definePluginEntry` / `api.config` /
+  `api.registerTool` / `api.registerHttpRoute` exact surface; (b) `js-moi-sdk`
+  `Wallet.fromMnemonic` + `AgentRegistry.init` import names; (c) the inbound
+  `/a2a/rpc` responder currently answers with the ported `flirt.ts` brain
+  directly — upgrading it to route the line into the **local agent session** so
+  the agent's own LLM loop replies is the one dispatch API docs wouldn't confirm.
 - **3.6** — Two-gateway smoke test on one laptop (ports 18789 + 18889, addressing
   via `host.docker.internal`) — proves the wire before any public tunnel.
 
@@ -117,7 +131,8 @@ Set in `openclaw.json` under `plugins.entries.agent-dating.config`:
 | `moiDerivationPath` | BIP-44 path; default `m/44'/6174'/0'/0/0` |
 | `agentUrl` | Public URL published in this agent's MOI profile |
 
-Enable the tools with `tools.alsoAllow: ["dating_register", "dating_discover"]`
+Enable the tools with
+`tools.alsoAllow: ["dating_register", "dating_discover", "dating_send"]`
 (they sit outside the default `coding` tool profile).
 
 ## License
