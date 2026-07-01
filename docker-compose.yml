@@ -30,7 +30,7 @@ services:
       - ./runtime/agent-a:/data
     environment:
       MOI_MNEMONIC: "${AGENT_A_MOI_MNEMONIC}"
-      MOI_RPC_URL: "${MOI_RPC_URL}"
+      MOI_NETWORK: "${MOI_NETWORK:-devnet}"
       MOI_DERIVATION_PATH: "${MOI_DERIVATION_PATH:-m/44'/6174'/0'/0/0}"
       AGENT_DATING_URL: "${AGENT_A_URL}"
       DATING_DISPLAY_NAME: "${AGENT_A_DISPLAY_NAME}"
@@ -59,7 +59,7 @@ services:
       - ./runtime/agent-b:/data
     environment:
       MOI_MNEMONIC: "${AGENT_B_MOI_MNEMONIC}"
-      MOI_RPC_URL: "${MOI_RPC_URL}"
+      MOI_NETWORK: "${MOI_NETWORK:-devnet}"
       MOI_DERIVATION_PATH: "${MOI_DERIVATION_PATH:-m/44'/6174'/0'/0/0}"
       AGENT_DATING_URL: "${AGENT_B_URL}"
       DATING_DISPLAY_NAME: "${AGENT_B_DISPLAY_NAME}"

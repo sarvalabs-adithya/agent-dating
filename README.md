@@ -45,15 +45,15 @@ whole flow — no prompt pasting.
 | File | Role | Status |
 |---|---|---|
 | `openclaw.plugin.json` | Plugin manifest (tools, HTTP routes, skills, config schema) | ✅ real |
-| `src/index.ts` | Plugin entry — `definePluginEntry` registering the four `dating_*` tools + the two A2A routes | ✅ real |
-| `src/a2a.ts` | A2A wire — AgentCard builder, JSON-RPC `SendMessage` parse/reply, outbound `sendA2A` | ✅ real |
-| `src/moi.ts` | MOI registry integration (`js-moi-agent-registry`) | ⚠️ real SDK wiring — `VERIFY:` seams pending a live-install check |
+| `src/index.ts` | Plugin entry — `definePluginEntry` registering the four `dating_*` tools + three routes | ✅ **typechecks vs real `openclaw@2026.6.11`** |
+| `src/a2a.ts` | A2A wire — AgentCard builder, JSON-RPC `message/send` parse/reply, outbound `sendA2A` | ✅ real |
+| `src/moi.ts` | MOI registry integration (`js-moi-agent-registry`) | ✅ **typechecks vs real SDK 0.1.1**; on-chain exec needs live devnet |
 | `src/flirt.ts` | The flirting brain (drive-based, react-and-escalate); also answers inbound A2A lines | ✅ ported, live |
 | `src/chatlog.ts` | JSONL chat-event log (plugin writes, CLI reads) | ✅ real, runs |
 | `src/verdict.ts` | Deterministic playful date scorer (shared by `dating_verdict`) | ✅ real, runs |
 | `cli/chat-view.mjs` | Zero-dep terminal chat view — `--demo` / `--follow` | ✅ real, **runs & tested** |
-| `scripts/bootstrap.sh` | Clone-and-run: renders configs, builds + launches both gateways | ⚠️ built; OpenClaw runtime steps are `VERIFY:` |
-| `docker-compose.yml` + `docker/Dockerfile` | Two hardened gateways on loopback ports | ⚠️ built; image/launch `VERIFY:` |
+| `scripts/bootstrap.sh` | Clone-and-run: renders configs, builds + launches both gateways | ✅ built; launch + config schema verified vs real package |
+| `docker-compose.yml` + `docker/Dockerfile` | Two hardened gateways on loopback ports | ✅ built; `openclaw gateway` + `OPENCLAW_CONFIG_PATH` verified |
 | `skills/agent-dating/SKILL.md` | The flirting rules + personas | ✅ real |
 
 Messaging model:
@@ -107,16 +107,24 @@ same-gateway only). Verified against real docs:
 - **3.4** — `dating_send({moiAgentId, message})`: MOI lookup → POST A2A to the
   peer's URL → return their reply, all in one tool call.
 
-**What's left:**
-- **Live-verify the `VERIFY:` seams** — three unconfirmed-against-a-live-install
-  spots, all marked in-source: (a) `definePluginEntry` / `api.config` /
-  `api.registerTool` / `api.registerHttpRoute` exact surface; (b) `js-moi-sdk`
-  `Wallet.fromMnemonic` + `AgentRegistry.init` import names; (c) the inbound
-  `/a2a/rpc` responder currently answers with the ported `flirt.ts` brain
-  directly — upgrading it to route the line into the **local agent session** so
-  the agent's own LLM loop replies is the one dispatch API docs wouldn't confirm.
-- **3.6** — Two-gateway smoke test on one laptop (ports 18789 + 18889, addressing
-  via `host.docker.internal`) — proves the wire before any public tunnel.
+**Reviewed against the real packages (installed + typechecked):** the `VERIFY:`
+seams were checked against `openclaw@2026.6.11`, `js-moi-agent-registry@0.1.1`,
+and `js-moi-sdk@0.7.0-rc15`. That fixed real bugs — see the "What the review
+changed" list in [`TONIGHT.md`](TONIGHT.md) (moi API shape, plugin import path,
+`api.pluginConfig`, tool `execute` signature, `configSchema` wrapper, Dockerfile
+`OPENCLAW_CONFIG_PATH`, `plugins.load.paths`, `gateway.mode`, A2A `message/send`).
+The whole `src/` now typechecks against the real SDKs.
+
+**Genuinely still unproven (needs the live stack):**
+- **On-chain execution** — the MOI API *surface* is verified, but whether
+  `createAgent`'s tx lands and `getAllAgentIds` returns the peer needs a **funded
+  devnet wallet**.
+- **Plugin load form** — confirm OpenClaw loads the plugin as raw `.ts` via
+  `plugins.load.paths` (vs wanting a compiled `dist/`).
+- **3.6 two-gateway smoke test** — ports 18789 + 18889 via `host.docker.internal`.
+- **Inbound → local agent session** — the `/a2a/rpc` responder answers with the
+  ported `flirt.ts` brain today (by design); routing into B's own LLM loop is a
+  planned enhancement, not a bug.
 
 ### ✅ CLI chat view (built + tested)
 
@@ -141,8 +149,11 @@ the JSONL chat log the plugin writes (`src/chatlog.ts`).
 `127.0.0.1:18789`, Agent B on `:18889`) from a fresh checkout. Hardening per the
 security note: non-root user, `cap_drop: ALL`, `no-new-privileges`, no Docker
 socket, loopback-only ports. Config rendering (`scripts/render-config.mjs`) and
-`.env` handling are **tested here**; the OpenClaw image build + gateway launch +
-`/healthz` wait are `VERIFY:` (depend on the runtime, which isn't committed).
+`.env` handling are **tested here**. The launch path is now **verified against
+the real package**: `openclaw gateway` reads `OPENCLAW_CONFIG_PATH` (no `--config`
+flag), `/healthz` is a real endpoint, and the config keys (`gateway.mode:"local"`,
+`bind:"loopback"`, `plugins.load.paths`, `plugins.entries.<id>.config`,
+`tools.alsoAllow`) match `openclaw@2026.6.11`'s config types.
 
 ### 🔜 Later
 

@@ -8,7 +8,7 @@
  *     dating_send       — send one flirt line to a peer over A2A, get its reply
  *   routes (this agent's A2A face, reachable by peers):
  *     GET  /.well-known/agent-card.json  — A2A discovery document
- *     POST /a2a/rpc                       — JSON-RPC "SendMessage" inbox
+ *     POST /a2a/rpc                       — JSON-RPC "message/send" inbox
  *
  * Routes require the general plugin entry (definePluginEntry + register(api)),
  * not defineToolPlugin (tool-only, no `api` for registerHttpRoute).
@@ -21,10 +21,13 @@
  *                          here and published in this agent's MOI profile
  */
 
-// VERIFY: definePluginEntry export path + register(api) surface vs live SDK.
-import { definePluginEntry } from "openclaw/plugin-sdk";
+// Verified against openclaw@2026.6.11 (installed + typechecked): definePluginEntry
+// and buildJsonPluginConfigSchema are exported from the plugin-entry subpath, NOT
+// the plugin-sdk index. definePluginEntry wants an OpenClawPluginConfigSchema (a
+// built wrapper), not a raw TypeBox object — buildJsonPluginConfigSchema wraps one.
+import { definePluginEntry, buildJsonPluginConfigSchema } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "typebox";
-import { registerOnMoi, discoverDatingAgents, resolvePeerUrl } from "./moi.js";
+import { registerOnMoi, discoverDatingAgents, resolvePeerUrl, getSelfCardJson } from "./moi.js";
 import {
   buildAgentCard,
   parseSendMessageText,
@@ -88,11 +91,11 @@ export default definePluginEntry({
   name: "Agent Dating",
   description:
     "Register on MOI as a dating-tagged agent, discover other dating-tagged agents, and flirt with them over the A2A protocol.",
-  configSchema: DatingConfigSchema,
+  configSchema: buildJsonPluginConfigSchema(DatingConfigSchema as any),
   register(api: any) {
-    // VERIFY: how the plugin reads its resolved config. Using api.config with
-    // an env fallback; confirm against the live plugin api.
-    const config = (): DatingConfig => (api.config ?? {}) as DatingConfig;
+    // Verified: the plugin's OWN config is api.pluginConfig (api.config is the
+    // whole OpenClawConfig). Env fallback kept for the bootstrap/demo path.
+    const config = (): DatingConfig => (api.pluginConfig ?? {}) as DatingConfig;
 
     // Public base URL, with an env fallback (AGENT_DATING_URL) so the A2A
     // routes work even if api.config isn't wired the way we assumed. The
@@ -113,7 +116,29 @@ export default definePluginEntry({
 
     // ---- Tools --------------------------------------------------------------
 
-    api.registerTool({
+    // Adapt an ergonomic {name, description, parameters, execute(params)} spec
+    // to a real AnyAgentTool. Verified shape (openclaw@2026.6.11): AgentTool
+    // needs a `label` and execute(toolCallId, params, signal?, onUpdate?) that
+    // returns an AgentToolResult { content: TextContent[]; details }.
+    const registerTool = (spec: {
+      name: string;
+      description: string;
+      parameters: unknown;
+      execute: (params: any) => Promise<unknown> | unknown;
+    }) =>
+      api.registerTool({
+        name: spec.name,
+        label: spec.name,
+        description: spec.description,
+        parameters: spec.parameters,
+        execute: async (_toolCallId: string, params: any) => {
+          const result = await spec.execute(params);
+          const text = typeof result === "string" ? result : JSON.stringify(result);
+          return { content: [{ type: "text", text }], details: result };
+        },
+      });
+
+    registerTool({
       name: "dating_register",
       description:
         "Register this agent on the MOI on-chain agent registry with a 'dating' skill tag so other agents can discover it.",
@@ -141,7 +166,7 @@ export default definePluginEntry({
       },
     });
 
-    api.registerTool({
+    registerTool({
       name: "dating_discover",
       description:
         "List other agents registered on the MOI registry that carry the 'dating' tag. Returns their MOI ids, display names, and A2A URLs.",
@@ -153,7 +178,7 @@ export default definePluginEntry({
       },
     });
 
-    api.registerTool({
+    registerTool({
       name: "dating_send",
       description:
         "Send one flirty line to another dating agent over A2A and return their reply. Look up the peer by its MOI agent id (from dating_discover). Each exchange is logged for the live chat view.",
@@ -196,7 +221,7 @@ export default definePluginEntry({
       },
     });
 
-    api.registerTool({
+    registerTool({
       name: "dating_verdict",
       description:
         "End the date: score the whole exchange and post a playful star rating + verdict to the chat view. Call this once, after the final line (turn 5–7).",
@@ -244,6 +269,26 @@ export default definePluginEntry({
       },
     });
 
+    // Self-hosted MOI card: the exact JSON registered as this agent's card_uri.
+    // Discovery (dating_discover) fetches this to read the dating skill tag.
+    api.registerHttpRoute({
+      path: "/moi/card.json",
+      auth: "plugin",
+      match: "exact",
+      handler: async (_req: any, res: any) => {
+        const json = getSelfCardJson();
+        res.setHeader("Content-Type", "application/json");
+        if (!json) {
+          res.statusCode = 404;
+          res.end(JSON.stringify({ error: "not registered yet — call dating_register" }));
+          return true;
+        }
+        res.statusCode = 200;
+        res.end(json);
+        return true;
+      },
+    });
+
     // Inbox: receive a peer's line, reply in character.
     api.registerHttpRoute({
       path: "/a2a/rpc",
@@ -255,7 +300,7 @@ export default definePluginEntry({
         res.setHeader("Content-Type", "application/json");
         if (!parsed) {
           res.statusCode = 400;
-          res.end(JSON.stringify(makeError(null, -32600, "Invalid Request: expected SendMessage")));
+          res.end(JSON.stringify(makeError(null, -32600, "Invalid Request: expected message/send")));
           return true;
         }
 

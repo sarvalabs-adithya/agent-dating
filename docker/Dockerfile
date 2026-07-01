@@ -1,9 +1,8 @@
 # agent-dating gateway image.
 #
-# VERIFY (tonight): the OpenClaw install + launch lines. This assumes OpenClaw
-# ships as an npm package `openclaw` with an `openclaw gateway` command. If your
-# working setup builds OpenClaw from a git clone instead, point INSTALL at that
-# (bootstrap.sh has a clone path already) and adjust CMD to its launch command.
+# Verified against openclaw@2026.6.11: ships as the npm package `openclaw` with
+# an `openclaw gateway` command. Config path is the OPENCLAW_CONFIG_PATH env
+# (there is NO --config flag). gateway.mode=local comes from the config file.
 
 FROM node:22-slim
 
@@ -12,9 +11,10 @@ RUN groupadd -r claw && useradd -r -g claw -m -d /home/claw claw \
     && mkdir -p /plugin /config /data && chown -R claw:claw /plugin /config /data
 
 # --- OpenClaw runtime -------------------------------------------------------
-# VERIFY: package name / version. Kept as its own layer so it's easy to swap.
-RUN npm install -g openclaw@latest \
-    || echo "VERIFY: 'npm i -g openclaw' failed — install the gateway your working setup uses here."
+# Verified: `openclaw` is a real npm package. Pinned to the pluginApi compat in
+# package.json (>=2026.6.11). Own layer so it's easy to bump.
+RUN npm install -g openclaw@2026.6.11 \
+    || echo "NOTE: pin bump may be needed — 'npm i -g openclaw' failed."
 
 # --- Plugin deps ------------------------------------------------------------
 # --ignore-scripts skips the native bufferutil build (README, Phase 3 note).
@@ -27,9 +27,11 @@ USER claw
 
 # Chat log lands in the mounted /data volume so the host chat view can tail it.
 ENV AGENT_DATING_CHATLOG=/data/agent-dating.chat.jsonl
+# Config path is an env var, not a flag.
+ENV OPENCLAW_CONFIG_PATH=/config/openclaw.json
 
 # Port is per-agent; compose maps it to a loopback host port.
 EXPOSE 18789 18889
 
-# VERIFY: gateway launch command + how it takes a config path.
-CMD ["sh", "-c", "openclaw gateway --config /config/openclaw.json"]
+# gateway reads OPENCLAW_CONFIG_PATH; bind/port/mode come from that config.
+CMD ["sh", "-c", "openclaw gateway"]
