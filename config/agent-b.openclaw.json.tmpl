@@ -1,19 +1,17 @@
 {
-  "__note": "VERIFY: exact openclaw.json schema. bootstrap.sh renders this via scripts/render-config.mjs into runtime/agent-b/openclaw.json. Agent B is the 'date' that answers over A2A.",
+  "__note": "Verified against openclaw@2026.6.11 config types. Agent B is the 'date' that answers over A2A. Rendered by scripts/render-config.mjs into runtime/agent-b/openclaw.json.",
 
   "gateway": {
-    "bind": "127.0.0.1",
+    "mode": "local",
+    "bind": "loopback",
     "port": 18889
   },
 
-  "agent": {
-    "displayName": "${AGENT_B_DISPLAY_NAME}"
-  },
-
   "plugins": {
+    "load": { "paths": ["/plugin"] },
     "entries": {
       "agent-dating": {
-        "path": "/plugin",
+        "enabled": true,
         "config": {
           "moiMnemonic": "${AGENT_B_MOI_MNEMONIC}",
           "moiDerivationPath": "${MOI_DERIVATION_PATH}",
@@ -24,7 +22,6 @@
   },
 
   "tools": {
-    "alsoAllow": ["dating_register", "dating_discover", "dating_send", "dating_verdict"],
-    "agentToAgent": { "allow": ["*"] }
+    "alsoAllow": ["dating_register", "dating_discover", "dating_send", "dating_verdict"]
   }
 }

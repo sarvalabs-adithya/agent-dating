@@ -4,8 +4,10 @@
  * OpenClaw has NO native A2A. We build the minimum of the A2A v1.0 JSON-RPC
  * binding needed for one-shot dialog:
  *   - AgentCard served at GET /.well-known/agent-card.json (discovery)
- *   - method "SendMessage" at POST /a2a/rpc (delivery)
- * See https://a2a-protocol.org — JSON-RPC 2.0 envelope, Message with text parts.
+ *   - method "message/send" at POST /a2a/rpc (delivery)
+ * See https://a2a-protocol.org — the JSON-RPC method name is "message/send"
+ * ("SendMessage" is the gRPC/conceptual name; we accept both inbound for
+ * interop). JSON-RPC 2.0 envelope, Message with text parts.
  *
  * This module is pure protocol shaping + outbound fetch. Wiring it into the
  * gateway's HTTP routes and the local agent session lives in index.ts.
@@ -78,7 +80,9 @@ export function parseSendMessageText(body: unknown): {
   text: string;
 } | null {
   const req = body as JsonRpcRequest;
-  if (!req || req.jsonrpc !== "2.0" || req.method !== "SendMessage") return null;
+  // Accept the spec method name and the gRPC-style alias for interop.
+  const isSend = req?.method === "message/send" || req?.method === "SendMessage";
+  if (!req || req.jsonrpc !== "2.0" || !isSend) return null;
   const msg = (req.params as { message?: A2AMessage } | undefined)?.message;
   const text = msg?.parts?.find((p) => p.kind === "text")?.text;
   if (typeof text !== "string") return null;
@@ -118,7 +122,7 @@ export async function sendA2A(
   const req: JsonRpcRequest = {
     jsonrpc: "2.0",
     id: messageId,
-    method: "SendMessage",
+    method: "message/send",
     params: {
       message: {
         role: "user",

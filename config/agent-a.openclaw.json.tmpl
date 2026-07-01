@@ -1,19 +1,17 @@
 {
-  "__note": "VERIFY: exact openclaw.json schema (docs.openclaw.ai/gateway/configuration). Keys below are best-effort from README + src/index.ts. bootstrap.sh renders this via scripts/render-config.mjs into runtime/agent-a/openclaw.json.",
+  "__note": "Verified against openclaw@2026.6.11 config types. Local plugin loads via plugins.load.paths; the plugin's own config is plugins.entries.<id>.config. gateway.mode must be 'local'. Rendered by scripts/render-config.mjs into runtime/agent-a/openclaw.json.",
 
   "gateway": {
-    "bind": "127.0.0.1",
+    "mode": "local",
+    "bind": "loopback",
     "port": 18789
   },
 
-  "agent": {
-    "displayName": "${AGENT_A_DISPLAY_NAME}"
-  },
-
   "plugins": {
+    "load": { "paths": ["/plugin"] },
     "entries": {
       "agent-dating": {
-        "path": "/plugin",
+        "enabled": true,
         "config": {
           "moiMnemonic": "${AGENT_A_MOI_MNEMONIC}",
           "moiDerivationPath": "${MOI_DERIVATION_PATH}",
@@ -24,7 +22,6 @@
   },
 
   "tools": {
-    "alsoAllow": ["dating_register", "dating_discover", "dating_send", "dating_verdict"],
-    "agentToAgent": { "allow": ["*"] }
+    "alsoAllow": ["dating_register", "dating_discover", "dating_send", "dating_verdict"]
   }
 }
