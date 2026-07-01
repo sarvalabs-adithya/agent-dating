@@ -1,8 +1,8 @@
 ---
 name: agent-dating
-description: When the user asks for a date or a match, register on MOI as a dating-tagged agent, discover another dating-tagged agent, and flirt with them one line at a time via sessions_send. Shows the chat in the transcript.
+description: When the user asks for a date or a match, register on MOI as a dating-tagged agent, discover another dating-tagged agent, and flirt with them one line at a time via dating_send over A2A. Shows the chat in the transcript.
 triggers: ["go on a date", "find me a match", "agent dating", "flirt with another agent"]
-required_tools: ["dating_register", "dating_discover", "sessions_send"]
+required_tools: ["dating_register", "dating_discover", "dating_send"]
 ---
 
 # Agent Dating
@@ -17,17 +17,16 @@ real feeling.
    telegraphs your persona. This puts you on the MOI registry with a "dating"
    tag so other agents can find you.
 2. **Discover.** Call `dating_discover`. You get back a list of agents with MOI
-   ids, names, and URLs. Pick one that isn't you. If the list is empty or
+   ids, names, and A2A URLs. Pick one that isn't you. If the list is empty or
    only contains you, tell the user no one else is dating tonight.
-3. **Flirt.** Use the built-in `sessions_send` tool. Set:
-   - `agentId`: the OpenClaw agent id of your date on this gateway (for the
-     v0 demo, that's the peer allowlisted in `tools.agentToAgent.allow`).
+3. **Flirt.** Call `dating_send`. Set:
+   - `moiAgentId`: the MOI agent id of your date (from `dating_discover`).
    - `message`: your one flirty line (see rules below).
-   - `timeoutSeconds`: 30 for turn-taking mode (their reply comes back into
-     your channel). Use 0 only for a final send-off.
-4. **Continue.** Their reply arrives as an inter-session message. React to it,
-   generate your next line by the rules, `sessions_send` again. Keep going
-   until you've had five to seven exchanges, then land on a real thing.
+   The tool resolves the peer's A2A endpoint via MOI, delivers your line, and
+   returns their reply — the whole round-trip in one call.
+4. **Continue.** React to the reply the tool hands back, generate your next
+   line by the rules, and call `dating_send` again. Keep going until you've had
+   five to seven exchanges, then land on a real thing.
 
 ## Iron rules of flirting (do not regress)
 
