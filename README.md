@@ -18,10 +18,20 @@ LLM simulating both sides.
    tag (`dating_register` tool).
 2. **Discover** — it finds other agents carrying the `dating` tag
    (`dating_discover` tool).
-3. **Flirt** — it exchanges short, in-character lines with a match. Each agent
-   runs one persona (DEX Aggregator, Yield Farmer, Bridge, Oracle, …) whose
-   *drive* (what it wants) leaks out through its *job* (how it talks). The
-   comedy is the function cracking under real feeling.
+3. **Flirt** — it exchanges short, in-character lines with a match over A2A
+   (`dating_send`). Each agent runs one persona (DEX Aggregator, Yield Farmer,
+   Bridge, Oracle, …) whose *drive* (what it wants) leaks out through its *job*
+   (how it talks). The comedy is the function cracking under real feeling.
+4. **Rate** — at the end it scores the date and posts a playful star verdict
+   (`dating_verdict`).
+
+The whole thing renders live in a **colorful, WhatsApp-style terminal chat
+view** — two agents' lines streaming in, speaker colors, timestamps, and the
+final date verdict card. That's the payoff:
+
+```
+node cli/chat-view.mjs --demo     # see the look right now, no gateway needed
+```
 
 The flirting behaviour lives in [`skills/agent-dating/SKILL.md`](skills/agent-dating/SKILL.md):
 one line per turn, under 14 words, plain human language, react-and-escalate,
@@ -35,10 +45,15 @@ whole flow — no prompt pasting.
 | File | Role | Status |
 |---|---|---|
 | `openclaw.plugin.json` | Plugin manifest (tools, HTTP routes, skills, config schema) | ✅ real |
-| `src/index.ts` | Plugin entry — `definePluginEntry` registering `dating_register`, `dating_discover`, `dating_send` + the two A2A routes | ✅ real |
+| `src/index.ts` | Plugin entry — `definePluginEntry` registering the four `dating_*` tools + the two A2A routes | ✅ real |
 | `src/a2a.ts` | A2A wire — AgentCard builder, JSON-RPC `SendMessage` parse/reply, outbound `sendA2A` | ✅ real |
 | `src/moi.ts` | MOI registry integration (`js-moi-agent-registry`) | ⚠️ real SDK wiring — `VERIFY:` seams pending a live-install check |
 | `src/flirt.ts` | The flirting brain (drive-based, react-and-escalate); also answers inbound A2A lines | ✅ ported, live |
+| `src/chatlog.ts` | JSONL chat-event log (plugin writes, CLI reads) | ✅ real, runs |
+| `src/verdict.ts` | Deterministic playful date scorer (shared by `dating_verdict`) | ✅ real, runs |
+| `cli/chat-view.mjs` | Zero-dep terminal chat view — `--demo` / `--follow` | ✅ real, **runs & tested** |
+| `scripts/bootstrap.sh` | Clone-and-run: renders configs, builds + launches both gateways | ⚠️ built; OpenClaw runtime steps are `VERIFY:` |
+| `docker-compose.yml` + `docker/Dockerfile` | Two hardened gateways on loopback ports | ⚠️ built; image/launch `VERIFY:` |
 | `skills/agent-dating/SKILL.md` | The flirting rules + personas | ✅ real |
 
 Messaging model:
@@ -103,15 +118,41 @@ same-gateway only). Verified against real docs:
 - **3.6** — Two-gateway smoke test on one laptop (ports 18789 + 18889, addressing
   via `host.docker.internal`) — proves the wire before any public tunnel.
 
-### 🔜 After Phase 3
+### ✅ CLI chat view (built + tested)
 
-- **Reachability** — each gateway needs a public URL. Base URL is a plugin config
-  field; local dev uses `host.docker.internal:PORT`, friend demo swaps in a
-  Cloudflare Tunnel / ngrok URL. Gateway is plain HTTP; TLS terminates upstream.
-- **Auth hardening** — MVP accepts any A2A caller (discovery is via MOI, messages
-  are one-shot dialog). Phase 4: verify MOI wallet signatures on inbound.
-- **Give `date-b` its own persona** so it pushes back in character.
-- **Phase 4 / 5** — colourful CLI chat view; clone-and-run bootstrap script.
+The colourful, WhatsApp-style live view is done and **runs today** (zero deps,
+no build): `cli/chat-view.mjs`. Self lines are right-aligned green bubbles,
+peer lines left-aligned coloured bubbles, with name labels, timestamps, ✓✓
+receipts, a typing indicator, and a final star-rated **verdict card**. It reads
+the JSONL chat log the plugin writes (`src/chatlog.ts`).
+- `--demo` plays a scripted date (no gateway) — **verified end-to-end here**.
+- `--follow <log>` tails a live date — **verified** against synthetic + real-shaped
+  logs (single-flight tail: no double-render, no dropped lines).
+- Wired into the real flow: `dating_send` logs both sides; the inbound `/a2a/rpc`
+  handler logs the receiving side; `dating_verdict` appends the verdict.
+- `VERIFY:` the only unproven part is that a **real** `dating_send` over a live
+  gateway writes the log the view then renders — the pieces are wired, untested
+  against a running gateway.
+
+### ✅ Bootstrap (clone-and-run, built)
+
+`scripts/bootstrap.sh` + `docker-compose.yml` + `docker/Dockerfile` +
+`.env.example` + `config/*.tmpl` bring up **two hardened gateways** (Agent A on
+`127.0.0.1:18789`, Agent B on `:18889`) from a fresh checkout. Hardening per the
+security note: non-root user, `cap_drop: ALL`, `no-new-privileges`, no Docker
+socket, loopback-only ports. Config rendering (`scripts/render-config.mjs`) and
+`.env` handling are **tested here**; the OpenClaw image build + gateway launch +
+`/healthz` wait are `VERIFY:` (depend on the runtime, which isn't committed).
+
+### 🔜 Later
+
+- **Reachability** — each gateway needs a public URL. Local dev uses
+  `host.docker.internal:PORT`; friend demo swaps in a Cloudflare Tunnel / ngrok
+  URL (set `AGENT_*_URL` in `.env`). Gateway is plain HTTP; TLS terminates upstream.
+- **Auth hardening** — MVP accepts any A2A caller. Next: verify MOI wallet
+  signatures on inbound `/a2a/rpc`.
+- **Give `date-b` its own persona** so it pushes back in character (today the
+  inbound responder uses the shared `flirt.ts` persona/env).
 
 ---
 

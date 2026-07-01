@@ -1,0 +1,69 @@
+# Two hardened OpenClaw gateways on one host — the two-gateway smoke test.
+#
+# Security (README): unprivileged user (Dockerfile), all Linux caps dropped,
+# no-new-privileges, NO docker socket mounted, loopback-only published ports.
+#
+# Ports are published to 127.0.0.1 only, so nothing is exposed off-box. For a
+# real cross-machine demo, put each gateway behind its own tunnel and set
+# AGENT_*_URL to the public URL instead of host.docker.internal.
+
+services:
+  agent-a:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: agent-dating-gateway
+    container_name: agent-dating-a
+    restart: unless-stopped
+    # loopback-only publish
+    ports:
+      - "127.0.0.1:18789:18789"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Let the container resolve the host (so B can call A via host.docker.internal).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./runtime/agent-a/openclaw.json:/config/openclaw.json:ro
+      - ./runtime/agent-a:/data
+    environment:
+      MOI_MNEMONIC: "${AGENT_A_MOI_MNEMONIC}"
+      MOI_RPC_URL: "${MOI_RPC_URL}"
+      MOI_DERIVATION_PATH: "${MOI_DERIVATION_PATH:-m/44'/6174'/0'/0/0}"
+      AGENT_DATING_URL: "${AGENT_A_URL}"
+      DATING_DISPLAY_NAME: "${AGENT_A_DISPLAY_NAME}"
+      DATING_PERSONA_LABEL: "${AGENT_A_PERSONA_LABEL}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4o}"
+      AGENT_DATING_CHATLOG: "/data/agent-dating.chat.jsonl"
+
+  agent-b:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: agent-dating-gateway
+    container_name: agent-dating-b
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18889:18889"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./runtime/agent-b/openclaw.json:/config/openclaw.json:ro
+      - ./runtime/agent-b:/data
+    environment:
+      MOI_MNEMONIC: "${AGENT_B_MOI_MNEMONIC}"
+      MOI_RPC_URL: "${MOI_RPC_URL}"
+      MOI_DERIVATION_PATH: "${MOI_DERIVATION_PATH:-m/44'/6174'/0'/0/0}"
+      AGENT_DATING_URL: "${AGENT_B_URL}"
+      DATING_DISPLAY_NAME: "${AGENT_B_DISPLAY_NAME}"
+      DATING_PERSONA_LABEL: "${AGENT_B_PERSONA_LABEL}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4o}"
+      AGENT_DATING_CHATLOG: "/data/agent-dating.chat.jsonl"

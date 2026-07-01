@@ -7,7 +7,7 @@
     "onStartup": true
   },
   "contracts": {
-    "tools": ["dating_register", "dating_discover", "dating_send"],
+    "tools": ["dating_register", "dating_discover", "dating_send", "dating_verdict"],
     "httpRoutes": ["/.well-known/agent-card.json", "/a2a/rpc"]
   },
   "skills": ["./skills"],

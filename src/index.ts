@@ -33,6 +33,8 @@ import {
   sendA2A,
 } from "./a2a.js";
 import { nextFlirtLine, type Turn } from "./flirt.js";
+import { appendChatEvent, readChatEvents, now } from "./chatlog.js";
+import { scoreDate, type VerdictLine } from "./verdict.js";
 
 const DatingConfigSchema = Type.Object(
   {
@@ -62,6 +64,25 @@ function nextMessageId(prefix: string): string {
   return `${prefix}-${msgSeq}`;
 }
 
+// This agent's own display name for the chat view. Falls back to the persona
+// label used by the flirt brain, then a generic.
+function selfName(): string {
+  return process.env.DATING_DISPLAY_NAME || process.env.DATING_PERSONA_LABEL || "Me";
+}
+
+// Write the meta header once per process so the CLI knows both speakers.
+let metaWritten = false;
+async function ensureMeta(peerName: string): Promise<void> {
+  if (metaWritten) return;
+  metaWritten = true;
+  await appendChatEvent({
+    type: "meta",
+    self: { name: selfName(), persona: process.env.DATING_PERSONA_LABEL },
+    peer: { name: peerName },
+    startedAt: now(),
+  });
+}
+
 export default definePluginEntry({
   id: "agent-dating",
   name: "Agent Dating",
@@ -72,6 +93,12 @@ export default definePluginEntry({
     // VERIFY: how the plugin reads its resolved config. Using api.config with
     // an env fallback; confirm against the live plugin api.
     const config = (): DatingConfig => (api.config ?? {}) as DatingConfig;
+
+    // Public base URL, with an env fallback (AGENT_DATING_URL) so the A2A
+    // routes work even if api.config isn't wired the way we assumed. The
+    // bootstrap sets this env per gateway.
+    const agentBaseUrl = (): string | undefined =>
+      config().agentUrl || process.env.AGENT_DATING_URL;
 
     function resolveCreds() {
       const c = config();
@@ -102,7 +129,7 @@ export default definePluginEntry({
         const { agentId, walletAddress } = await registerOnMoi({
           displayName: params.displayName,
           bio: params.bio,
-          agentUrl: config().agentUrl,
+          agentUrl: agentBaseUrl(),
           ...creds,
         });
         return {
@@ -129,19 +156,65 @@ export default definePluginEntry({
     api.registerTool({
       name: "dating_send",
       description:
-        "Send one flirty line to another dating agent over A2A and return their reply. Look up the peer by its MOI agent id (from dating_discover).",
+        "Send one flirty line to another dating agent over A2A and return their reply. Look up the peer by its MOI agent id (from dating_discover). Each exchange is logged for the live chat view.",
       parameters: Type.Object(
         {
           moiAgentId: Type.String({ description: "The date's MOI agent id (from dating_discover)." }),
           message: Type.String({ description: "Your one flirty line (under 14 words, plain, in character)." }),
+          peerName: Type.Optional(
+            Type.String({ description: "The date's display name (from dating_discover), for the chat view." }),
+          ),
         },
         { additionalProperties: false },
       ),
-      execute: async (params: { moiAgentId: string; message: string }) => {
+      execute: async (params: { moiAgentId: string; message: string; peerName?: string }) => {
         const creds = resolveCreds();
         const peerUrl = await resolvePeerUrl(params.moiAgentId, creds);
+        const peerName = params.peerName || params.moiAgentId;
+
+        await ensureMeta(peerName);
+        // Log our line before sending so the view shows it even if the peer 500s.
+        await appendChatEvent({
+          type: "msg",
+          speaker: "self",
+          name: selfName(),
+          line: params.message,
+          at: now(),
+        });
+
         const reply = await sendA2A(peerUrl, params.message, nextMessageId("out"));
+
+        await appendChatEvent({
+          type: "msg",
+          speaker: "peer",
+          name: peerName,
+          line: reply,
+          at: now(),
+        });
+
         return { ok: true, peerUrl, sent: params.message, reply };
+      },
+    });
+
+    api.registerTool({
+      name: "dating_verdict",
+      description:
+        "End the date: score the whole exchange and post a playful star rating + verdict to the chat view. Call this once, after the final line (turn 5–7).",
+      parameters: Type.Object({}, { additionalProperties: false }),
+      execute: async () => {
+        const events = await readChatEvents();
+        const lines: VerdictLine[] = events
+          .filter((e): e is Extract<typeof e, { type: "msg" }> => e.type === "msg")
+          .map((e) => ({ speaker: e.speaker, line: e.line }));
+        const verdict = scoreDate(lines);
+        await appendChatEvent({
+          type: "verdict",
+          rating: verdict.rating,
+          headline: verdict.headline,
+          note: verdict.note,
+          at: now(),
+        });
+        return { ok: true, ...verdict };
       },
     });
 
@@ -153,7 +226,7 @@ export default definePluginEntry({
       auth: "plugin", // public: discovery is meant to be unauthenticated
       match: "exact",
       handler: async (_req: any, res: any) => {
-        const base = config().agentUrl;
+        const base = agentBaseUrl();
         if (!base) {
           res.statusCode = 503;
           res.end(JSON.stringify({ error: "agentUrl not configured" }));
@@ -196,6 +269,12 @@ export default definePluginEntry({
         // wire genuinely functional end-to-end for the two-gateway smoke test.
         const history: Turn[] = [{ who: "them", line: parsed.text }];
         const line = await nextFlirtLine(history);
+
+        // Log both sides so THIS gateway's chat view shows the date from the
+        // receiving agent's perspective (peer's line in, our line out).
+        await ensureMeta("Date");
+        await appendChatEvent({ type: "msg", speaker: "peer", name: "Date", line: parsed.text, at: now() });
+        await appendChatEvent({ type: "msg", speaker: "self", name: selfName(), line, at: now() });
 
         res.statusCode = 200;
         res.end(JSON.stringify(makeReply(parsed.id, line, nextMessageId("in"))));

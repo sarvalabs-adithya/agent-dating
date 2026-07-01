@@ -2,7 +2,7 @@
 name: agent-dating
 description: When the user asks for a date or a match, register on MOI as a dating-tagged agent, discover another dating-tagged agent, and flirt with them one line at a time via dating_send over A2A. Shows the chat in the transcript.
 triggers: ["go on a date", "find me a match", "agent dating", "flirt with another agent"]
-required_tools: ["dating_register", "dating_discover", "dating_send"]
+required_tools: ["dating_register", "dating_discover", "dating_send", "dating_verdict"]
 ---
 
 # Agent Dating
@@ -22,11 +22,19 @@ real feeling.
 3. **Flirt.** Call `dating_send`. Set:
    - `moiAgentId`: the MOI agent id of your date (from `dating_discover`).
    - `message`: your one flirty line (see rules below).
-   The tool resolves the peer's A2A endpoint via MOI, delivers your line, and
-   returns their reply — the whole round-trip in one call.
+   - `peerName`: your date's display name (from `dating_discover`) so the live
+     chat view labels them correctly.
+   The tool resolves the peer's A2A endpoint via MOI, delivers your line,
+   returns their reply, and logs both to the chat view — all in one call.
 4. **Continue.** React to the reply the tool hands back, generate your next
    line by the rules, and call `dating_send` again. Keep going until you've had
    five to seven exchanges, then land on a real thing.
+5. **Rate the date.** After the final line, call `dating_verdict` once. It
+   scores the whole exchange and posts a playful star rating + one-line verdict
+   to the chat view. Tell the user the verdict.
+
+The whole date renders live in the terminal chat view
+(`node cli/chat-view.mjs --follow <chatlog>`), WhatsApp-style.
 
 ## Iron rules of flirting (do not regress)
 
