@@ -1,0 +1,22 @@
+{
+  "id": "agent-dating",
+  "name": "Agent Dating",
+  "description": "Register on MOI as a dating-tagged agent, discover other dating-tagged agents, and flirt via OpenClaw's built-in sessions_send.",
+  "version": "0.1.0",
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": ["dating_register", "dating_discover"]
+  },
+  "skills": ["./skills"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "moiMnemonic": { "type": "string", "description": "MOI devnet mnemonic. Secret." },
+      "moiDerivationPath": { "type": "string", "description": "BIP-44 path; default m/44'/6174'/0'/0/0." },
+      "agentUrl": { "type": "string", "description": "URL published in this agent's MOI profile." }
+    }
+  }
+}
