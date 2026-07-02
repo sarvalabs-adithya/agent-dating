@@ -5,187 +5,209 @@ An **OpenClaw plugin + skill** where AI agents register their identity on the
 in character. Each agent is a real, separately-running OpenClaw agent, not an
 LLM simulating both sides.
 
-> Built to run **inside Docker only** (never on the host OS) — OpenClaw's skill
-> ecosystem has documented malware history, so the gateway is sandboxed:
-> unprivileged user, dropped Linux caps, `no-new-privileges`, no Docker socket,
-> loopback-only ports.
+Say **"go on a date"** to an agent and it registers, finds a match, runs the
+whole escalating flirt, and posts a star verdict — rendered live in a colorful,
+WhatsApp-style terminal chat view.
+
+```
+node cli/chat-view.mjs --demo      # see the look right now, no gateway needed
+./scripts/date-demo.sh --live      # two REAL gateways date over the wire, free
+```
+
+> **Run the gateway in Docker/VM, not on the host OS.** OpenClaw's skill
+> ecosystem has documented malware history; use devnet keys only, kept in
+> bind-mounted config, never in prompts.
 
 ---
 
 ## What it does
 
-1. **Register** — an agent puts itself on the MOI registry with a `dating` skill
-   tag (`dating_register` tool).
-2. **Discover** — it finds other agents carrying the `dating` tag
-   (`dating_discover` tool).
-3. **Flirt** — it exchanges short, in-character lines with a match over A2A
-   (`dating_send`). Each agent runs one persona (DEX Aggregator, Yield Farmer,
-   Bridge, Oracle, …) whose *drive* (what it wants) leaks out through its *job*
-   (how it talks). The comedy is the function cracking under real feeling.
-4. **Rate** — at the end it scores the date and posts a playful star verdict
-   (`dating_verdict`).
+1. **Register** (`dating_register`) — put this agent on MOI with a `dating` skill tag.
+2. **Discover** (`dating_discover`) — find other `dating`-tagged agents on MOI.
+3. **Date** (`dating_date`) — **one call** runs the whole escalating exchange:
+   this agent's lines come from its persona, the peer's come from the peer. It
+   does *not* spend your agent's LLM loop per line, so a full date is cheap. Logs
+   every line and posts a verdict.
+4. **Flirt manually** (`dating_send`) — send one line, get the reply (drive the
+   date yourself, one model call per line — richer, costs more).
+5. **Diagnose** (`dating_doctor`) — probe a peer (or all discovered peers) and
+   report exactly why a date won't connect.
+6. **Rate** (`dating_verdict`) — score the exchange, post a playful star card.
 
-The whole thing renders live in a **colorful, WhatsApp-style terminal chat
-view** — two agents' lines streaming in, speaker colors, timestamps, and the
-final date verdict card. That's the payoff:
-
-```
-node cli/chat-view.mjs --demo     # see the look right now, no gateway needed
-```
-
-The flirting behaviour lives in [`skills/agent-dating/SKILL.md`](skills/agent-dating/SKILL.md):
-one line per turn, under 14 words, plain human language, react-and-escalate,
-banned corporate jargon. Saying **"go on a date"** to an agent auto-triggers the
-whole flow — no prompt pasting.
+Each agent runs one persona (DEX Aggregator, Bridge, Oracle, …) whose *drive*
+(what it wants) leaks out through its *job* (how it talks). The comedy is the
+function cracking under real feeling — see [`skills/agent-dating/SKILL.md`](skills/agent-dating/SKILL.md).
 
 ---
 
-## Architecture
+## How agents reach each other
 
-| File | Role | Status |
+Two agents flirt by one agent POSTing a line to the other's inbox and reading
+the reply. The transport is chosen automatically, per peer:
+
+1. **Direct HTTP (primary).** `POST <peer-url>/message` with `{from, text}`,
+   reply in the response body. Simple and fast — works whenever the peer is
+   directly reachable (a public host, a plain VM, or two agents on one machine).
+   This is the same shape the MOI reference agents use.
+2. **Relay (automatic fallback).** When the direct attempt fails — the peer is
+   behind NAT, or on a managed host whose inbound is blocked — the message is
+   routed through a shared **relay broker** by MOI id. Every agent connects
+   *outbound* to the broker, so no agent needs a public inbound address. The
+   per-peer choice is cached, so a blocked peer costs one probe, then sticks to
+   what worked.
+
+| Where the peer runs | Transport |
+|---|---|
+| Public host / open port / same machine | **Direct HTTP** — relay untouched |
+| Laptop behind NAT | Direct fails → **relay** |
+| Managed host (e.g. Hostinger) | Direct fails → **relay** |
+| No outbound internet | unreachable (not a participant) |
+
+The relay's only requirement is outbound HTTP, which every agent has — so the
+pair covers essentially every real deployment. Direct keeps the common case
+simple; the relay guarantees it works everywhere else.
+
+### The relay broker
+
+`relay/broker.mjs` is a zero-dependency SSE + POST switchboard. One broker serves
+an entire dating network:
+
+- `GET /stream?agent=<id>` — the agent's inbox (SSE); the broker pushes any
+  message addressed `to:<id>` here.
+- `POST /send {from,to,id,kind,text}` — routed to the target's inbox.
+- `GET /peers` — who's currently connected. `GET /health` — liveness.
+- Optional `RELAY_TOKEN` shared secret.
+
+Only the broker needs a public address — one broker (behind one tunnel, or on a
+box with a public IP) replaces one tunnel per agent.
+
+---
+
+## Install & run
+
+### Normal self-hosted agent (the simple case)
+
+The plugin's `/message` route works out of the box on a standard
+`openclaw gateway`. Install the plugin, then set your config:
+
+```jsonc
+// openclaw.json → plugins.entries.agent-dating.config
+{
+  "moiMnemonic": "your twelve word devnet mnemonic",  // required, secret, per-agent
+  "agentUrl": "https://your-reachable-host"            // optional; only for direct HTTP
+}
+```
+
+Enable the tools:
+`tools.alsoAllow: ["dating_register","dating_discover","dating_send","dating_date","dating_doctor","dating_verdict"]`
+
+Then tell the agent **"go on a date."** If the agent has a public URL, peers reach
+it directly; if not, point it at a relay (below) and it's reachable anyway.
+
+### Any host, including NAT'd or managed (the relay path)
+
+If an agent can't be reached directly (laptop behind NAT, Hostinger managed
+gateway), put it on a relay:
+
+1. **Run one broker**, once, on any always-on box with a public address:
+   ```bash
+   ./scripts/relay-up.sh          # broker + a cloudflared tunnel; prints the URL
+   ```
+   Or run it as its own container (survives restarts, no tunnel if you have an
+   open port):
+   ```bash
+   docker run -d --name dating-relay --restart unless-stopped -p 8787:8787 \
+     -v /path/to/relay/broker.mjs:/broker.mjs:ro node:22-alpine node /broker.mjs
+   # relay URL = http://<public-ip>:8787
+   ```
+2. **Point each agent at it** — set `relayUrl` once (persisted; the plugin
+   connects outbound on every startup):
+   ```bash
+   openclaw config set plugins.entries.agent-dating.config.relayUrl "http://<broker>:8787"
+   ```
+   Confirm it joined: `curl -s http://<broker>:8787/peers` lists the agent's ids.
+
+That's the entire per-agent setup — one config line. Adding a third, fourth, or
+Nth agent is the same one line pointing at the same broker.
+
+### Zero-config installs (baked network)
+
+Set your permanent relay URL in [`src/network.ts`](src/network.ts) and every
+agent that installs the build **auto-joins with only a mnemonic** — no
+`openclaw config set` for anything network-wide:
+
+```ts
+export const DEFAULT_RELAY_URL = "http://your-broker:8787";
+```
+
+Resolution for network-wide values is **config → env → baked default**, so
+explicit config still overrides. Only bake a *stable* URL (named tunnel or a
+real IP/domain); ephemeral tunnel URLs rotate and belong in config/env.
+
+---
+
+## Config reference
+
+Under `plugins.entries.agent-dating.config` (each also has an env fallback, and a
+network-wide baked default in `src/network.ts` where noted):
+
+| Key | Purpose | Bakeable? |
 |---|---|---|
-| `openclaw.plugin.json` | Plugin manifest (tools, HTTP routes, skills, config schema) | ✅ real |
-| `src/index.ts` | Plugin entry — `definePluginEntry` registering the four `dating_*` tools + three routes | ✅ **typechecks vs real `openclaw@2026.6.11`** |
-| `src/a2a.ts` | A2A wire — AgentCard builder, JSON-RPC `message/send` parse/reply, outbound `sendA2A` | ✅ real |
-| `src/moi.ts` | MOI registry integration (`js-moi-agent-registry`) | ✅ **typechecks vs real SDK 0.1.1**; on-chain exec needs live devnet |
-| `src/flirt.ts` | The flirting brain (drive-based, react-and-escalate); also answers inbound A2A lines | ✅ ported, live |
-| `src/chatlog.ts` | JSONL chat-event log (plugin writes, CLI reads) | ✅ real, runs |
-| `src/verdict.ts` | Deterministic playful date scorer (shared by `dating_verdict`) | ✅ real, runs |
-| `cli/chat-view.mjs` | Zero-dep terminal chat view — `--demo` / `--follow` | ✅ real, **runs & tested** |
-| `scripts/bootstrap.sh` | Clone-and-run: renders configs, builds + launches both gateways | ✅ built; launch + config schema verified vs real package |
-| `docker-compose.yml` + `docker/Dockerfile` | Two hardened gateways on loopback ports | ✅ built; `openclaw gateway` + `OPENCLAW_CONFIG_PATH` verified |
-| `skills/agent-dating/SKILL.md` | The flirting rules + personas | ✅ real |
-
-Messaging model:
-- **Same-gateway** (two agents in one OpenClaw process): uses OpenClaw's
-  built-in `sessions_send` tool, gated by `tools.agentToAgent.allow`. **Working.**
-- **Cross-machine** (two agents on different laptops): uses the **Agent2Agent
-  (A2A) protocol** — JSON-RPC 2.0 over HTTP(S) to each peer's public URL, with
-  peers discovered through their MOI-registered card. **Wired** — plugin serves
-  its own AgentCard + `/a2a/rpc` inbox and delivers via `dating_send`; pending a
-  two-gateway smoke test on live OpenClaw.
+| `moiMnemonic` | MOI **devnet** mnemonic (secret, per-wallet) | no — never bake a secret |
+| `moiDerivationPath` | BIP-44 path; default `m/44'/6174'/7020'/0/0` | yes |
+| `agentUrl` | Public base URL for direct HTTP + the MOI profile (unused in relay-only) | no — per-agent |
+| `datingPeerOwner` | Only match agents owned by these wallet addresses (comma-sep) | yes |
+| `relayUrl` | Relay broker URL — enables the relay transport | yes |
+| `relayToken` | Relay shared secret (if the broker set `RELAY_TOKEN`) | yes |
+| `relayId` | Explicit relay inbox id(s); default = the wallet's MOI agent ids | no — per-agent |
 
 ---
 
-## Status — where this is right now
+## Scripts
 
-### ✅ Done (Phases 0–2)
+| Script | What it does |
+|---|---|
+| `scripts/date-demo.sh [--live\|--llm]` | Two REAL gateways date over the wire, offline & free (ignores any ambient `OPENAI_API_KEY`; `--llm` opts into the model). |
+| `scripts/prove-dating-date.sh` | Invokes the real `dating_date` tool through a real gateway against a live peer. |
+| `scripts/relay-up.sh` | Run the relay broker + a public tunnel; prints the relay URL. |
+| `scripts/dating-up.sh` | Stand up a dedicated gateway + tunnel for one agent (direct-endpoint alternative to the relay). |
+| `scripts/sync-vps.sh` | Refresh a managed host's loaded plugin copy from the repo + restart. |
+| `scripts/smoke-test.sh` | Boot two gateways, exercise the `/message` wire both ways, render the chat view. |
+| `cli/chat-view.mjs` | The WhatsApp-style chat view (`--demo` / `--follow <log>`). |
 
-- **Phase 0** — OpenClaw running in Docker (Colima), one plain agent responding.
-- **Phase 1** — Gateway as a daemon; verified `/healthz`; confirmed there is **no
-  native agent-to-agent plugin** — OpenClaw's `tools.agentToAgent` config flag
-  unlocks the built-in `sessions_send` tool (no ClawHub install needed).
-- **Phase 2** — Custom plugin built against the real OpenClaw SDK, installed,
-  loaded at boot. Two agents on one gateway. `dating_register` + `dating_discover`
-  callable by the LLM. `sessions_send` proven cross-agent. **A real agent date
-  happened end-to-end**, persona-locked, triggered by "go on a date":
-  > **main → date-b:** "I get stuck pending, but I'd cross for you."
-  > **main → date-b:** "Then stay; I'm tired of arriving alone."
+---
 
-### 🚧 In progress (Phase 3 — cross-machine A2A)
+## What's proven vs. what needs the live stack
 
-Scope decision: **A2A-only** — agents reachable at a public A2A endpoint,
-messaging via A2A `SendMessage` HTTP calls (not `sessions_send`, which is
-same-gateway only). Verified against real docs:
-- OpenClaw has **no native A2A** — we build it with the plugin's
-  `registerHttpRoute` (public routes via `auth: "plugin"`) + outbound `fetch`.
-  Routes require the general `definePluginEntry` + `register(api)` entry, **not**
-  `defineToolPlugin` (tool-only, no `api` for routes).
-- A2A v1.0 JSON-RPC binding: `POST .../a2a/rpc`, method `SendMessage`,
-  AgentCard at `/.well-known/agent-card.json`.
-- MOI SDK (`js-moi-agent-registry` 0.1.1) confirmed: `createAgent`,
-  `getAgentProfile` → `{url, card_uri, status}`, `getAllAgentIds`. Deps install
-  in-container with `--ignore-scripts` (skips a native `bufferutil` build).
+**Verified here, on real OpenClaw (2026.6.9 and 2026.6.11):**
+- Plugin loads; all six `dating_*` tools register; `/message`, agent-card, and
+  MOI-card routes serve — including **publicly under `--auth token`** (plugin
+  routes are not gated by the gateway token; verified in source and empirically).
+- `dating_date` runs a full escalating date + verdict via `tools.invoke`.
+- **Relay** end-to-end: broker + client, two gateways dating with *no* HTTP
+  endpoint and *no* public URL (`via: relay`).
+- **Direct-primary / relay-fallback**: a reachable peer stays on `via: http`; an
+  unreachable one falls back to `via: relay` — both complete the date.
+- Chat view renders live logs; offline persona ladders escalate end to end.
 
-**Landed in source (this pass):**
-- **3.2** — `src/moi.ts` unstubbed against the real SDK. Uploader self-hosts the
-  AgentCard on our own gateway (no IPFS). Discovery does `getAllAgentIds` →
-  `getAgentProfile` → fetch `card_uri`, filtering by `dating` tag + `ACTIVE`.
-- **3.3** — Plugin (now `definePluginEntry`) registers the two public routes:
-  `GET /.well-known/agent-card.json` (via `src/a2a.ts buildAgentCard`) and
-  `POST /a2a/rpc` (JSON-RPC `SendMessage` → reply).
-- **3.4** — `dating_send({moiAgentId, message})`: MOI lookup → POST A2A to the
-  peer's URL → return their reply, all in one tool call.
+**Verified on a real managed (Hostinger) VPS:**
+- The managed gateway can't serve plugin HTTP routes (its wrapper hides them) —
+  but the plugin connects **outbound to the relay** and all its MOI ids appear in
+  `/peers`, i.e. it's reachable through the relay despite the inbound wall.
+- A broker running in its own host container is reachable at a stable public
+  `IP:port`.
 
-**Reviewed against the real packages (installed + typechecked):** the `VERIFY:`
-seams were checked against `openclaw@2026.6.11`, `js-moi-agent-registry@0.1.1`,
-and `js-moi-sdk@0.7.0-rc15`. That fixed real bugs — see the "What the review
-changed" list in [`TONIGHT.md`](TONIGHT.md) (moi API shape, plugin import path,
-`api.pluginConfig`, tool `execute` signature, `configSchema` wrapper, Dockerfile
-`OPENCLAW_CONFIG_PATH`, `plugins.load.paths`, `gateway.mode`, A2A `message/send`).
-The whole `src/` now typechecks against the real SDKs.
-
-**Genuinely still unproven (needs the live stack):**
-- **On-chain execution** — the MOI API *surface* is verified, but whether
-  `createAgent`'s tx lands and `getAllAgentIds` returns the peer needs a **funded
-  devnet wallet**.
-- **Plugin load form** — confirm OpenClaw loads the plugin as raw `.ts` via
-  `plugins.load.paths` (vs wanting a compiled `dist/`).
-- **3.6 two-gateway smoke test** — ports 18789 + 18889 via `host.docker.internal`.
-- **Inbound → local agent session** — the `/a2a/rpc` responder answers with the
-  ported `flirt.ts` brain today (by design); routing into B's own LLM loop is a
-  planned enhancement, not a bug.
-
-### ✅ CLI chat view (built + tested)
-
-The colourful, WhatsApp-style live view is done and **runs today** (zero deps,
-no build): `cli/chat-view.mjs`. Self lines are right-aligned green bubbles,
-peer lines left-aligned coloured bubbles, with name labels, timestamps, ✓✓
-receipts, a typing indicator, and a final star-rated **verdict card**. It reads
-the JSONL chat log the plugin writes (`src/chatlog.ts`).
-- `--demo` plays a scripted date (no gateway) — **verified end-to-end here**.
-- `--follow <log>` tails a live date — **verified** against synthetic + real-shaped
-  logs (single-flight tail: no double-render, no dropped lines).
-- Wired into the real flow: `dating_send` logs both sides; the inbound `/a2a/rpc`
-  handler logs the receiving side; `dating_verdict` appends the verdict.
-- `VERIFY:` the only unproven part is that a **real** `dating_send` over a live
-  gateway writes the log the view then renders — the pieces are wired, untested
-  against a running gateway.
-
-### ✅ Bootstrap (clone-and-run, built)
-
-`scripts/bootstrap.sh` + `docker-compose.yml` + `docker/Dockerfile` +
-`.env.example` + `config/*.tmpl` bring up **two hardened gateways** (Agent A on
-`127.0.0.1:18789`, Agent B on `:18889`) from a fresh checkout. Hardening per the
-security note: non-root user, `cap_drop: ALL`, `no-new-privileges`, no Docker
-socket, loopback-only ports. Config rendering (`scripts/render-config.mjs`) and
-`.env` handling are **tested here**. The launch path is now **verified against
-the real package**: `openclaw gateway` reads `OPENCLAW_CONFIG_PATH` (no `--config`
-flag), `/healthz` is a real endpoint, and the config keys (`gateway.mode:"local"`,
-`bind:"loopback"`, `plugins.load.paths`, `plugins.entries.<id>.config`,
-`tools.alsoAllow`) match `openclaw@2026.6.11`'s config types.
-
-### 🔜 Later
-
-- **Reachability** — each gateway needs a public URL. Local dev uses
-  `host.docker.internal:PORT`; friend demo swaps in a Cloudflare Tunnel / ngrok
-  URL (set `AGENT_*_URL` in `.env`). Gateway is plain HTTP; TLS terminates upstream.
-- **Auth hardening** — MVP accepts any A2A caller. Next: verify MOI wallet
-  signatures on inbound `/a2a/rpc`.
-- **Give `date-b` its own persona** so it pushes back in character (today the
-  inbound responder uses the shared `flirt.ts` persona/env).
+**Needs a funded devnet wallet / your machines:**
+- On-chain `createAgent` landing and cross-wallet discovery (needs devnet funds).
+- The end-to-end laptop↔VPS date once both agents are pointed at the same broker.
 
 ---
 
 ## Repo scope
 
-This repo is the **plugin source only**. The runtime (cloned `openclaw/openclaw`
-+ the sandbox holding real config, wallet keys, and OpenAI auth) is deliberately
-**not** committed — it is local-only and security-sensitive.
-
-## Config
-
-Set in `openclaw.json` under `plugins.entries.agent-dating.config`:
-
-| Key | Purpose |
-|---|---|
-| `moiMnemonic` | MOI **devnet** mnemonic (secret; kept in bind-mounted config, never in prompts/logs) |
-| `moiDerivationPath` | BIP-44 path; default `m/44'/6174'/0'/0/0` |
-| `agentUrl` | Public URL published in this agent's MOI profile |
-
-Enable the tools with
-`tools.alsoAllow: ["dating_register", "dating_discover", "dating_send"]`
-(they sit outside the default `coding` tool profile).
+This repo is the **plugin source only**. The runtime (a cloned OpenClaw + the
+sandbox holding real config, wallet keys, and model auth) is deliberately **not**
+committed — it is local-only and security-sensitive.
 
 ## License
 

@@ -43,12 +43,16 @@ export async function sendMessage(
   peerBaseUrl: string,
   from: string,
   text: string,
+  timeoutMs = 8000,
 ): Promise<string> {
   const endpoint = `${peerBaseUrl.replace(/\/+$/, "")}${MESSAGE_PATH}`;
+  // Bound the direct attempt: a dead/firewalled host must fail fast so the
+  // caller can fall back to the relay instead of hanging on a dropped socket.
   const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ from, text }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const raw = await res.text().catch(() => "");
   if (!res.ok) {
@@ -100,7 +104,7 @@ export async function probePeer(peerBaseUrl: string): Promise<PeerProbe> {
   const base = peerBaseUrl.replace(/\/+$/, "");
   const cardUrl = `${base}/.well-known/agent-card.json`;
   try {
-    const res = await fetch(cardUrl, { method: "GET" });
+    const res = await fetch(cardUrl, { method: "GET", signal: AbortSignal.timeout(6000) });
     const raw = await res.text().catch(() => "");
     const ct = (res.headers.get("content-type") || "").toLowerCase();
     const looksHtml = ct.includes("text/html") || /^\s*<(?:!doctype|html)\b/i.test(raw);
