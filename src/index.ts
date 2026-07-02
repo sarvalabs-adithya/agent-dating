@@ -41,6 +41,12 @@ import { nextFlirtLine, type Turn } from "./flirt.js";
 import { appendChatEvent, readChatEvents, now } from "./chatlog.js";
 import { scoreDate, type VerdictLine } from "./verdict.js";
 import { RelayClient } from "./relay.js";
+import {
+  DEFAULT_RELAY_URL,
+  DEFAULT_RELAY_TOKEN,
+  DEFAULT_DERIVATION_PATH,
+  DEFAULT_PEER_OWNER,
+} from "./network.js";
 
 const DatingConfigSchema = Type.Object(
   {
@@ -154,11 +160,22 @@ export default definePluginEntry({
           "agent-dating: no MOI mnemonic configured. Set plugins.entries.agent-dating.config.moiMnemonic in openclaw.json (or MOI_MNEMONIC env).",
         );
       }
-      return { mnemonic, derivationPath: c.moiDerivationPath };
+      const derivationPath =
+        c.moiDerivationPath || process.env.MOI_DERIVATION || DEFAULT_DERIVATION_PATH || undefined;
+      return { mnemonic, derivationPath };
     }
 
-    const relayUrlCfg = (): string | undefined => config().relayUrl || process.env.DATING_RELAY_URL;
-    const relayTokenCfg = (): string | undefined => config().relayToken || process.env.DATING_RELAY_TOKEN;
+    // Peer-owner allowlist: config → env → baked default (network.ts). Empty = anyone.
+    const peerOwnersCfg = (): string[] =>
+      (config().datingPeerOwner || process.env.AGENT_DATING_PEER_OWNER || DEFAULT_PEER_OWNER || "")
+        .split(",").map((s) => s.trim()).filter(Boolean);
+
+    // Resolution: explicit config → env → baked-in default network (network.ts).
+    // The baked default lets a fresh install auto-join with no config at all.
+    const relayUrlCfg = (): string | undefined =>
+      config().relayUrl || process.env.DATING_RELAY_URL || DEFAULT_RELAY_URL || undefined;
+    const relayTokenCfg = (): string | undefined =>
+      config().relayToken || process.env.DATING_RELAY_TOKEN || DEFAULT_RELAY_TOKEN || undefined;
 
     // Shared "answer an incoming flirt" logic, used by BOTH the inbound HTTP
     // /message route and the relay inbox. Keeps per-peer history so replies
@@ -291,10 +308,7 @@ export default definePluginEntry({
       parameters: Type.Object({}, { additionalProperties: false }),
       execute: async () => {
         const creds = resolveCreds();
-        const peerOwners = (config().datingPeerOwner || process.env.AGENT_DATING_PEER_OWNER || "")
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
+        const peerOwners = peerOwnersCfg();
         const matches = await discoverDatingAgents(creds, { peerOwners });
         return { ok: true, count: matches.length, matches };
       },
@@ -360,8 +374,7 @@ export default definePluginEntry({
           });
           if (url) await probeOne(params.target, url);
         } else {
-          const peerOwners = (config().datingPeerOwner || process.env.AGENT_DATING_PEER_OWNER || "")
-            .split(",").map((s) => s.trim()).filter(Boolean);
+          const peerOwners = peerOwnersCfg();
           const matches = await discoverDatingAgents(creds, { peerOwners });
           if (!matches.length) {
             return { ok: true, self: { url: selfUrl }, peers: [], summary: "No dating peers discovered on MOI to probe." };
@@ -412,10 +425,7 @@ export default definePluginEntry({
         let peerId = params.moiAgentId;
         let peerName = peerId || "";
         if (!peerId) {
-          const peerOwners = (config().datingPeerOwner || process.env.AGENT_DATING_PEER_OWNER || "")
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean);
+          const peerOwners = peerOwnersCfg();
           const matches = await discoverDatingAgents(creds, { peerOwners });
           if (!matches.length) {
             return {
