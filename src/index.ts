@@ -100,6 +100,9 @@ const DatingConfigSchema = Type.Object(
     openclawBin: Type.Optional(
       Type.String({ description: "Path to the openclaw binary for useAgentBrain (default: 'openclaw' on PATH)." }),
     ),
+    datingAgentId: Type.Optional(
+      Type.String({ description: "Which local agent answers dates when useAgentBrain is on (`openclaw agent --agent <id>`). Default 'main'." }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -118,6 +121,7 @@ interface DatingConfig {
   personaLines?: string;
   useAgentBrain?: boolean;
   openclawBin?: string;
+  datingAgentId?: string;
 }
 
 // A tiny monotonic-ish message id source. Date.now()/Math.random() are fine in
@@ -240,9 +244,15 @@ export default definePluginEntry({
         // knows it's dating and replies as itself. Fall back to flirt.ts on any
         // failure so a date never dead-ends.
         try {
+          // `openclaw agent` needs an explicit --agent target, and the session
+          // key must be scoped to it (agent:<id>:...) or the gateway rejects the
+          // turn with "No target session selected". Keep one session per date so
+          // the agent remembers the conversation.
+          const agentId = config().datingAgentId || "main";
           line = await runAgentReply(datePrompt(name, text), {
             bin: config().openclawBin,
-            sessionKey: `dating:${fromId}`,
+            agentId,
+            sessionKey: `agent:${agentId}:dating:${fromId}`,
             timeoutMs: 90000,
           });
         } catch (e: any) {
