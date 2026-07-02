@@ -1,9 +1,8 @@
 {
-  "__note": "Verified against openclaw@2026.6.11 config types. Local plugin loads via plugins.load.paths; the plugin's own config is plugins.entries.<id>.config. gateway.mode must be 'local'. Rendered by scripts/render-config.mjs into runtime/agent-a/openclaw.json.",
-
   "gateway": {
     "mode": "local",
-    "bind": "loopback",
+    "bind": "custom",
+    "customBindHost": "0.0.0.0",
     "port": 18789
   },
 

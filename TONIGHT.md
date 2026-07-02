@@ -3,9 +3,33 @@
 Built while you were away: **CLI chat view** + **bootstrap**, then I **reviewed
 every `VERIFY:` seam against the real published packages** (installed
 `openclaw@2026.6.11`, `js-moi-agent-registry@0.1.1`, `js-moi-sdk@0.7.0-rc15`,
-read their type defs, and typechecked the plugin against them). That turned most
-"unproven" seams into "verified + fixed real bugs." What's left needs a live
-gateway + funded devnet wallet — genuinely un-runnable here.
+read their type defs, and typechecked the plugin against them). Then I went
+further and **RAN the two-gateway smoke test live in the sandbox** (host
+processes, not Docker — image pulls are blocked by this sandbox's proxy).
+
+## ✅ PROVEN LIVE (ran here — don't re-derive, just re-run)
+
+- Two real gateways booted on **18789 + 18889** from our rendered configs.
+- Both pass `/healthz` → `{"ok":true,"status":"live"}`.
+- **The plugin loads as raw `.ts`** via `plugins.load.paths` — log shows
+  `8 plugins: agent-dating, …`. No build step needed. (Former unknown #2: closed.)
+- `GET /.well-known/agent-card.json` serves our card on a live gateway.
+- `POST /a2a/rpc` `message/send` works **cross-gateway, both directions**
+  (A→B on :18889 and B→A on :18789), returns a flirty line.
+- The gateway **writes the chat log** and `cli/chat-view.mjs` renders it —
+  the full pipeline (gateway → A2A → JSONL → WhatsApp view) ran end-to-end.
+
+**Live-run bugs found + fixed (already committed):**
+- `openclaw.json` schema is STRICT — my `__note` keys made the gateway refuse
+  to boot (`<root>: Invalid input`). Removed; docs moved to `config/NOTES.md`.
+- In Docker, `bind:"loopback"` would be unreachable through the port publish →
+  templates now use `bind:"custom"` + `customBindHost:"0.0.0.0"` (host publish
+  stays loopback-only).
+- **`.dockerignore` was missing** — `COPY . /plugin` would have baked `.env`
+  and `runtime/` (mnemonics!) into the image. Added.
+- Gateway needs `--allow-unconfigured --auth none` to start without a model
+  provider — Dockerfile CMD updated. (`--auth none` is fine ONLY behind the
+  loopback publish; use `--auth token` for any tunnel — see config/NOTES.md.)
 
 Ordered so you get the visual win in 30s, then work outward to the live-gateway
 parts. Each step says **what you should see** and **what to check if it doesn't**.
@@ -138,17 +162,16 @@ node cli/chat-view.mjs --follow runtime/agent-a/agent-dating.chat.jsonl
 
 ---
 
-## Genuinely still unproven (needs the live stack — can't be checked here)
+## Genuinely still unproven (needs YOUR laptop)
 
-| # | Item | Where | Nature |
-|---|---|---|---|
-| 1 | MOI on-chain tx actually lands + peer is discoverable | `src/moi.ts` | Needs funded **devnet** wallet; API shape verified, execution not |
-| 2 | Plugin loads from `plugins.load.paths` as raw `.ts` (vs needing a compiled build) | `config/*.tmpl`, plugin pkg | OpenClaw loads TS extensions; confirm no `dist/` build required |
-| 3 | `gateway.mode:"local"` starts cleanly in-container (vs needing `--allow-unconfigured`) | `docker/Dockerfile` | Runtime start behavior |
-| 4 | Inbound A2A → **local agent session** (uses `flirt.ts` today, by design) | `src/index.ts` (inbound handler) | Enhancement, not a bug — upgrade to route into B's own LLM loop |
-| 5 | End-to-end date over two live gateways | whole stack | The Step 6 integration itself |
+| # | Item | Why it couldn't run here |
+|---|---|---|
+| 1 | **Docker image build + container networking** (Step 3) | Sandbox proxy 403s registry CDN pulls (Docker Hub AND ECR). Everything inside the image is proven on host; the packaging isn't. |
+| 2 | MOI on-chain register→discover | Needs a **funded devnet** wallet |
+| 3 | LLM-generated flirt lines | No `OPENAI_API_KEY` here — the offline canned fallback answered (note: canned lines are DEX-flavored regardless of persona; cosmetic) |
+| 4 | The agent-driven "go on a date" flow (`openclaw agent -m …`) | Needs a configured model provider |
+| 5 | Inbound A2A → B's **own LLM session** (uses `flirt.ts` today, by design) | Enhancement, not a bug |
 
-**Proven here:** the whole `src/` typechecks against the **real** installed
-`openclaw` + MOI packages; chat-view `--demo`/`--follow` (single-flight tail, no
-dupes/drops); plugin-format log rendering; config rendering with quote-heavy
-values; every `.mjs`/`.sh` passes `node --check`/`bash -n`.
+**Also proven earlier:** whole `src/` typechecks against the real installed
+packages; chat-view `--demo`/`--follow` (single-flight tail — no dupes/drops);
+config rendering with quote-heavy values; `node --check`/`bash -n` all pass.

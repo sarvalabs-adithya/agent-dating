@@ -1,0 +1,8 @@
+# Keep the build context small and secrets OUT of the image.
+node_modules
+runtime
+.env
+.git
+*.chat.jsonl
+*.log
+TONIGHT.md

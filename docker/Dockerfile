@@ -34,4 +34,7 @@ ENV OPENCLAW_CONFIG_PATH=/config/openclaw.json
 EXPOSE 18789 18889
 
 # gateway reads OPENCLAW_CONFIG_PATH; bind/port/mode come from that config.
-CMD ["sh", "-c", "openclaw gateway"]
+# --allow-unconfigured: start without a model provider configured (proven needed).
+# --auth none: OK only because compose publishes to host loopback; use
+#   --auth token if you ever tunnel a gateway to the internet (see config/NOTES.md).
+CMD ["sh", "-c", "openclaw gateway --allow-unconfigured --auth none"]
