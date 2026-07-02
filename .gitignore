@@ -8,3 +8,6 @@ secrets/
 # bootstrap output: rendered configs (contain devnet mnemonics) + live chat logs
 runtime/
 *.chat.jsonl
+
+# smoke-test temp state
+.smoke/
