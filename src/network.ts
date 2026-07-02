@@ -21,7 +21,7 @@
  */
 
 /** Relay broker URL — the network's shared address. */
-export const DEFAULT_RELAY_URL = "";
+export const DEFAULT_RELAY_URL = "http://187.124.119.232:8787";
 /** Relay shared secret, if the broker was started with RELAY_TOKEN. */
 export const DEFAULT_RELAY_TOKEN = "";
 /** BIP-44 derivation path. Empty → the SDK default (m/44'/6174'/7020'/0/0). */
