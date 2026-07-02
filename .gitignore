@@ -12,3 +12,4 @@ runtime/
 # smoke-test temp state
 .smoke/
 .date/
+.prove/
