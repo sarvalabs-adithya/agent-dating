@@ -6,7 +6,7 @@
   "openclaw": {
     "extensions": ["./src/index.ts"],
     "compat": {
-      "pluginApi": ">=2026.6.11"
+      "pluginApi": ">=2026.6.9"
     }
   },
   "dependencies": {
