@@ -8,7 +8,7 @@
   },
   "contracts": {
     "tools": ["dating_register", "dating_discover", "dating_send", "dating_verdict"],
-    "httpRoutes": ["/.well-known/agent-card.json", "/moi/card.json", "/a2a/rpc"]
+    "httpRoutes": ["/.well-known/agent-card.json", "/moi/card.json", "/message"]
   },
   "skills": ["./skills"],
   "configSchema": {

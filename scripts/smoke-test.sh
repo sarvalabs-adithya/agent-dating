@@ -88,23 +88,23 @@ done
 ok "Both gateways healthy."
 grep -oE "http server listening \([^)]*plugins:[^)]*\)" "$DIR/a/gw.log" | head -1 || true
 
-# --- exercise the A2A wire ---------------------------------------------------
-send() { # $1=port $2=text  -> prints reply text
-  curl -sS -m 10 -X POST "http://127.0.0.1:$1/a2a/rpc" \
+# --- exercise the message wire ( POST /message { from, text } ) --------------
+send() { # $1=port $2=text  -> prints reply JSON
+  curl -sS -m 10 -X POST "http://127.0.0.1:$1/message" \
     -H 'Content-Type: application/json' \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":\"x\",\"method\":\"message/send\",\"params\":{\"message\":{\"role\":\"user\",\"parts\":[{\"kind\":\"text\",\"text\":\"$2\"}],\"messageId\":\"m\"}}}"
+    -d "{\"from\":\"smoke-test\",\"text\":\"$2\"}"
 }
 
 say "GET Agent A's AgentCard…"
 curl -sf -m 5 "http://127.0.0.1:$PA/.well-known/agent-card.json" | node -e 'const d=JSON.parse(require("fs").readFileSync(0));if(d.skills?.[0]?.tags?.includes("dating"))console.log("  card ok — dating skill present");else{console.error("card missing dating skill");process.exit(1)}'
 ok "AgentCard served."
 
-say "A → B  and  B → A  (message/send)…"
+say "A → B  and  B → A  ( POST /message )…"
 RA=$(send "$PB" "Every route I ran tonight ended at you.")
 RB=$(send "$PA" "I get stuck pending. Do not wait on me.")
-echo "$RA" | grep -q '"role":"agent"' || die "A→B got no agent reply: $RA"
-echo "$RB" | grep -q '"role":"agent"' || die "B→A got no agent reply: $RB"
-ok "Cross-gateway A2A works both directions."
+echo "$RA" | grep -q '"text"' || die "A→B got no reply: $RA"
+echo "$RB" | grep -q '"text"' || die "B→A got no reply: $RB"
+ok "Cross-gateway messaging works both directions."
 
 # --- render the chat view (Agent B's side of the date) -----------------------
 say "Rendering Agent B's chat log…"

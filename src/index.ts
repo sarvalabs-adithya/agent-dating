@@ -5,10 +5,11 @@
  *   tools:
  *     dating_register   — put this agent on MOI with a "dating" tag
  *     dating_discover   — list other dating-tagged agents on MOI
- *     dating_send       — send one flirt line to a peer over A2A, get its reply
- *   routes (this agent's A2A face, reachable by peers):
- *     GET  /.well-known/agent-card.json  — A2A discovery document
- *     POST /a2a/rpc                       — JSON-RPC "message/send" inbox
+ *     dating_send       — POST a flirt line to a peer's /message, get its reply
+ *   routes (this agent's face, reachable by peers):
+ *     GET  /.well-known/agent-card.json  — discovery document
+ *     GET  /moi/card.json                — self-hosted MOI card (card_uri)
+ *     POST /message                       — inbox: { from, text } → reply
  *
  * Routes require the general plugin entry (definePluginEntry + register(api)),
  * not defineToolPlugin (tool-only, no `api` for registerHttpRoute).
@@ -27,14 +28,14 @@
 // built wrapper), not a raw TypeBox object — buildJsonPluginConfigSchema wraps one.
 import { definePluginEntry, buildJsonPluginConfigSchema } from "openclaw/plugin-sdk/plugin-entry";
 import { Type } from "typebox";
-import { registerOnMoi, discoverDatingAgents, resolvePeerUrl, getSelfCardJson } from "./moi.js";
 import {
-  buildAgentCard,
-  parseSendMessageText,
-  makeReply,
-  makeError,
-  sendA2A,
-} from "./a2a.js";
+  registerOnMoi,
+  discoverDatingAgents,
+  resolvePeerUrl,
+  getSelfCardJson,
+  getMyIdentifier,
+} from "./moi.js";
+import { buildAgentCard, parseInboundMessage, makeReply, sendMessage } from "./a2a.js";
 import { nextFlirtLine, type Turn } from "./flirt.js";
 import { appendChatEvent, readChatEvents, now } from "./chatlog.js";
 import { scoreDate, type VerdictLine } from "./verdict.js";
@@ -218,7 +219,8 @@ export default definePluginEntry({
           at: now(),
         });
 
-        const reply = await sendA2A(peerUrl, params.message, nextMessageId("out"));
+        const myId = await getMyIdentifier(creds);
+        const reply = await sendMessage(peerUrl, myId, params.message);
 
         await appendChatEvent({
           type: "msg",
@@ -300,40 +302,37 @@ export default definePluginEntry({
       },
     });
 
-    // Inbox: receive a peer's line, reply in character.
+    // Inbox: peers POST { from, text } here; we reply in character.
+    // Path matches the MOI agent convention (…/message).
     api.registerHttpRoute({
-      path: "/a2a/rpc",
-      auth: "plugin", // MVP: any A2A caller accepted (see README auth-hardening)
+      path: "/message",
+      auth: "plugin", // any caller accepted (see README auth-hardening)
       match: "exact",
       handler: async (req: any, res: any) => {
         const body = await readJsonBody(req);
-        const parsed = parseSendMessageText(body);
+        const parsed = parseInboundMessage(body);
         res.setHeader("Content-Type", "application/json");
         if (!parsed) {
           res.statusCode = 400;
-          res.end(JSON.stringify(makeError(null, -32600, "Invalid Request: expected message/send")));
+          res.end(JSON.stringify({ error: "expected JSON body { from, text }" }));
           return true;
         }
 
-        // Generate this agent's reply line.
-        //
-        // VERIFY: the "right" implementation routes `parsed.text` into this
-        // gateway's local agent session so the agent's own LLM loop (with its
-        // SOUL/persona) answers. That dispatch API is unconfirmed against the
-        // live gateway. Until confirmed we answer with the ported flirt brain
-        // (src/flirt.ts) directly — same persona rules, and it makes the A2A
-        // wire genuinely functional end-to-end for the two-gateway smoke test.
-        const history: Turn[] = [{ who: "them", line: parsed.text }];
+        // Generate this agent's reply line via the ported flirt brain.
+        // VERIFY: the fuller version routes the line into this gateway's own
+        // agent session so its LLM/persona answers; that dispatch API is still
+        // unconfirmed, so we answer with src/flirt.ts directly for now.
+        const history: Turn[] = [{ who: parsed.from, line: parsed.text }];
         const line = await nextFlirtLine(history);
 
         // Log both sides so THIS gateway's chat view shows the date from the
-        // receiving agent's perspective (peer's line in, our line out).
-        await ensureMeta("Date");
-        await appendChatEvent({ type: "msg", speaker: "peer", name: "Date", line: parsed.text, at: now() });
+        // receiving agent's perspective.
+        await ensureMeta(parsed.from);
+        await appendChatEvent({ type: "msg", speaker: "peer", name: parsed.from, line: parsed.text, at: now() });
         await appendChatEvent({ type: "msg", speaker: "self", name: selfName(), line, at: now() });
 
         res.statusCode = 200;
-        res.end(JSON.stringify(makeReply(parsed.id, line, nextMessageId("in"))));
+        res.end(JSON.stringify(makeReply(selfName(), line)));
         return true;
       },
     });

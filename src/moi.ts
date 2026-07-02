@@ -27,7 +27,10 @@ import { AgentRegistry, AgentStatus } from "js-moi-agent-registry";
 // VoyageProvider takes a NETWORK NAME (README: `new VoyageProvider('devnet')`),
 // not a raw RPC URL. Override with MOI_NETWORK if you use a different network.
 const MOI_NETWORK = process.env.MOI_NETWORK || "devnet";
-const DEFAULT_DERIVATION = "m/44'/6174'/0'/0/0";
+// Verified against the MOI agent webinar reference: created participant accounts
+// live at account index 7020, not 0. Using 0 derives an uncreated account
+// ("account not found"). Override with moiDerivationPath if yours differs.
+const DEFAULT_DERIVATION = "m/44'/6174'/7020'/0/0";
 const DATING_TAG = "dating";
 
 export interface MoiCreds {
@@ -88,9 +91,8 @@ export async function registerOnMoi(opts: {
   agentUrl?: string;
 } & MoiCreds): Promise<{ agentId: string; walletAddress: string }> {
   const base = (opts.agentUrl || "").replace(/\/+$/, "");
-  // On-chain `url` IS the A2A endpoint peers message, so sendA2A can post to it
-  // directly. card_uri points at the self-hosted card route.
-  const a2aUrl = base ? `${base}/a2a/rpc` : "";
+  // On-chain `url` is the agent's BASE url; peers message it at `${url}/message`
+  // (MOI agent convention). card_uri points at the self-hosted card route.
   const cardUrl = base ? `${base}/moi/card.json` : undefined;
 
   const { registry, wallet } = await openRegistry(opts, cardUrl);
@@ -104,7 +106,7 @@ export async function registerOnMoi(opts: {
       name: opts.displayName,
       description: opts.bio,
       version: "0.2.0",
-      url: a2aUrl,
+      url: base,
       agentWallet: walletAddress,
       preferredTransport: "JSONRPC",
       capabilities: { streaming: false },
@@ -177,7 +179,18 @@ export async function discoverDatingAgents(
   return matches;
 }
 
-/** Resolve a MOI agent id to its A2A rpc endpoint (for dating_send). */
+/** This agent's own identifier string, used as the `from` on outbound messages. */
+export async function getMyIdentifier(creds: MoiCreds): Promise<string> {
+  const provider = new VoyageProvider(MOI_NETWORK);
+  const wallet = await Wallet.fromMnemonic(
+    creds.mnemonic,
+    creds.derivationPath || DEFAULT_DERIVATION,
+  );
+  wallet.connect(provider);
+  return (await wallet.getIdentifier()).toString();
+}
+
+/** Resolve a MOI agent id to its base message URL (for dating_send). */
 export async function resolvePeerUrl(agentId: string, creds: MoiCreds): Promise<string> {
   const { registry } = await openRegistry(creds);
   const { found, profile } = await registry.getAgentProfile(agentId);
