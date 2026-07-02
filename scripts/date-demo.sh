@@ -7,14 +7,15 @@
 #
 #   ./scripts/date-demo.sh            # render the finished transcript once
 #   ./scripts/date-demo.sh --live     # animate it line-by-line as it lands
+#   ./scripts/date-demo.sh --llm      # let the model author the lines (costs $$)
 #
-# ZERO cost, ZERO external deps: no Docker, no MOI funding, no OpenAI/Anthropic
-# key. Every line is authored by a real gateway over real HTTP — the relay only
-# seeds the opener and carries the envelope. This is the actual A2A wire, offline.
+# ZERO cost, ZERO external deps by default: no Docker, no MOI funding, no
+# OpenAI/Anthropic key. Every line is authored by a real gateway over real HTTP —
+# the relay only seeds the opener and carries the envelope. This is the actual
+# A2A wire, offline. The demo deliberately IGNORES any ambient OPENAI_API_KEY so
+# it's free and deterministic every run; pass --llm to opt into the paid model.
 #
-# What it does NOT cover (needs the funded stack): on-chain MOI register/discover
-# and LLM-authored lines. With OPENAI_API_KEY set, the lines come from the model
-# instead of the offline persona ladders; everything else is identical.
+# What it does NOT cover (needs the funded stack): on-chain MOI register/discover.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -24,7 +25,13 @@ say() { printf '%s➜%s %s\n' "$(c '1;35')" "$(c 0)" "$*"; }
 ok()  { printf '%s✓%s %s\n' "$(c '1;32')" "$(c 0)" "$*"; }
 die() { printf '%s✗%s %s\n' "$(c '1;31')" "$(c 0)" "$*" >&2; exit 1; }
 
-LIVE=0; [ "${1:-}" = "--live" ] && LIVE=1
+LIVE=0; LLM=0
+for a in "$@"; do
+  case "$a" in
+    --live) LIVE=1 ;;
+    --llm)  LLM=1 ;;
+  esac
+done
 
 PA=18789; PB=18889
 DIR=".date"
@@ -74,8 +81,21 @@ gen_cfg "$PB" "$DIR/b/openclaw.json"
 A_LADDER='["I'"'"'d wait. No slippage on how I feel.","I keep rerouting, but every path is you.","Then stay. I'"'"'m tired of arriving alone."]'
 B_LADDER='["I get stuck pending. Don'"'"'t wait on me.","People cross me and leave. Every time.","…okay. Don'"'"'t let go halfway across."]'
 
+# By default the demo is free + deterministic, so it must NOT use whatever
+# OPENAI_API_KEY happens to live in your shell/agent env — an out-of-credits or
+# rejected key makes the flirt brain fall back to a literal "…" and the date
+# reads as broken. Blank the key for the booted gateways so they always walk the
+# offline persona ladders. `--llm` keeps the ambient key and lets the model write.
+KEY_OVERRIDE=(OPENAI_API_KEY= OPENAI_MODEL="${OPENAI_MODEL:-}")
+if [ "$LLM" = 1 ]; then
+  [ -n "${OPENAI_API_KEY:-}" ] || die "--llm needs OPENAI_API_KEY set in your shell."
+  KEY_OVERRIDE=(OPENAI_API_KEY="$OPENAI_API_KEY" OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o}")
+  say "LLM mode: lines authored by ${OPENAI_MODEL:-gpt-4o} (this spends OpenAI credits)."
+fi
+
 # --- boot both gateways ------------------------------------------------------
 boot() { # $1=port $2=slug $3=name $4=drive $5=flaw $6=ladder
+  env "${KEY_OVERRIDE[@]}" \
   OPENCLAW_CONFIG_PATH="$PWD/$DIR/$2/openclaw.json" \
   OPENCLAW_STATE_DIR="$PWD/$DIR/$2/state" \
   AGENT_DATING_URL="http://127.0.0.1:$1" \
