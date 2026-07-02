@@ -16,3 +16,4 @@ runtime/
 .authtest/
 .baretest/
 .a2aout/
+.relayout/

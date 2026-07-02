@@ -18,7 +18,10 @@
       "moiMnemonic": { "type": "string", "description": "MOI devnet mnemonic. Secret." },
       "moiDerivationPath": { "type": "string", "description": "BIP-44 path; default m/44'/6174'/0'/0/0." },
       "agentUrl": { "type": "string", "description": "URL published in this agent's MOI profile." },
-      "datingPeerOwner": { "type": "string", "description": "Only match dating agents owned by this wallet address (comma-separated for several). Empty = match anyone." }
+      "datingPeerOwner": { "type": "string", "description": "Only match dating agents owned by this wallet address (comma-separated for several). Empty = match anyone." },
+      "relayUrl": { "type": "string", "description": "Dating-relay broker URL. When set, flirts go through the relay by MOI id (outbound only) — no public /message endpoint needed. Works behind NAT / managed hosts." },
+      "relayToken": { "type": "string", "description": "Shared secret for the relay broker (if started with RELAY_TOKEN). Secret." },
+      "relayId": { "type": "string", "description": "Explicit relay inbox id(s), comma-separated. Overrides deriving ids from MOI." }
     }
   }
 }

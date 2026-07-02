@@ -34,11 +34,13 @@ import {
   resolvePeerUrl,
   getSelfCardJson,
   getMyIdentifier,
+  getMyAgentIds,
 } from "./moi.js";
 import { buildAgentCard, parseInboundMessage, makeReply, sendMessage, probePeer } from "./a2a.js";
 import { nextFlirtLine, type Turn } from "./flirt.js";
 import { appendChatEvent, readChatEvents, now } from "./chatlog.js";
 import { scoreDate, type VerdictLine } from "./verdict.js";
+import { RelayClient } from "./relay.js";
 
 const DatingConfigSchema = Type.Object(
   {
@@ -55,6 +57,21 @@ const DatingConfigSchema = Type.Object(
           "Optional: only match dating agents owned by this wallet address (comma-separated for several). Makes A discover only your B on the shared devnet.",
       }),
     ),
+    relayUrl: Type.Optional(
+      Type.String({
+        description:
+          "Optional: a dating-relay broker URL (see relay/broker.mjs). When set, this agent sends/receives flirts through the relay by MOI id — OUTBOUND only, so no public /message endpoint is needed. Works behind NAT and on managed hosts.",
+      }),
+    ),
+    relayToken: Type.Optional(
+      Type.String({ description: "Optional shared secret for the relay broker (if it was started with RELAY_TOKEN)." }),
+    ),
+    relayId: Type.Optional(
+      Type.String({
+        description:
+          "Optional explicit relay inbox id(s), comma-separated. Overrides deriving ids from MOI — use it to give this agent a stable relay handle, or to relay before registering on-chain.",
+      }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -64,6 +81,9 @@ interface DatingConfig {
   moiDerivationPath?: string;
   agentUrl?: string;
   datingPeerOwner?: string;
+  relayUrl?: string;
+  relayToken?: string;
+  relayId?: string;
 }
 
 // A tiny monotonic-ish message id source. Date.now()/Math.random() are fine in
@@ -136,6 +156,81 @@ export default definePluginEntry({
       }
       return { mnemonic, derivationPath: c.moiDerivationPath };
     }
+
+    const relayUrlCfg = (): string | undefined => config().relayUrl || process.env.DATING_RELAY_URL;
+    const relayTokenCfg = (): string | undefined => config().relayToken || process.env.DATING_RELAY_TOKEN;
+
+    // Shared "answer an incoming flirt" logic, used by BOTH the inbound HTTP
+    // /message route and the relay inbox. Keeps per-peer history so replies
+    // escalate, and logs both sides to the chat view.
+    async function replyTo(fromId: string, text: string, peerName?: string): Promise<string> {
+      const name = peerName || fromId;
+      const history = conversationWith(fromId);
+      history.push({ who: name, line: text });
+      const line = await nextFlirtLine(history);
+      history.push({ who: selfName(), line });
+      await ensureMeta(name);
+      await appendChatEvent({ type: "msg", speaker: "peer", name, line: text, at: now() });
+      await appendChatEvent({ type: "msg", speaker: "self", name: selfName(), line, at: now() });
+      return line;
+    }
+
+    // Send one line to a peer and get their reply, choosing transport:
+    //  - relay (by MOI id) when a relay is configured and the target is an id;
+    //  - direct HTTP POST /message otherwise (target is a URL, or the peer's
+    //    on-chain url resolved from its MOI id).
+    async function dialPeer(
+      target: string,
+      creds: { mnemonic: string; derivationPath?: string },
+      text: string,
+    ): Promise<{ reply: string; via: "relay" | "http"; target: string }> {
+      const isUrl = /^https?:\/\//i.test(target);
+      await relayReady;
+      if (relay && myRelayId && !isUrl) {
+        const reply = await relay.request(target, myRelayId, text);
+        return { reply, via: "relay", target };
+      }
+      const url = isUrl ? target : await resolvePeerUrl(target, creds);
+      const myId = await getMyIdentifier(creds);
+      const reply = await sendMessage(url, myId, text);
+      return { reply, via: "http", target: url };
+    }
+
+    // ---- Relay transport (outbound-only; works behind NAT / managed hosts) ---
+    // When relayUrl is configured we connect an inbox for each of THIS wallet's
+    // MOI agent ids and answer inbound flirts through the relay. dating_send /
+    // dating_date then message peers by MOI id instead of a direct URL.
+    let relay: RelayClient | null = null;
+    let myRelayId: string | null = null;
+    const relayReady = (async () => {
+      const url = relayUrlCfg();
+      if (!url) return;
+      try {
+        // Prefer explicit relay ids (config/env); else derive from MOI.
+        const explicit = (config().relayId || process.env.DATING_RELAY_ID || "")
+          .split(",").map((s) => s.trim()).filter(Boolean);
+        let ids: string[] = explicit;
+        if (!ids.length) {
+          let creds;
+          try { creds = resolveCreds(); } catch { return; } // no mnemonic/relayId yet → skip
+          ids = await getMyAgentIds(creds);
+        }
+        if (!ids.length) { console.warn("agent-dating: relay configured but no relay ids (register on MOI or set relayId)."); return; }
+        myRelayId = ids[0];
+        relay = new RelayClient(url, relayTokenCfg(), (s) => console.warn(`agent-dating relay: ${s}`));
+        for (const id of ids) {
+          relay.listen(id, (m) => {
+            void (async () => {
+              const line = await replyTo(m.from, m.text);
+              await relay!.post({ to: m.from, from: m.to, id: m.id, kind: "reply", text: line });
+            })();
+          });
+        }
+        console.log(`agent-dating: relay connected at ${url} for ${ids.length} id(s); primary ${myRelayId}`);
+      } catch (e: any) {
+        console.warn(`agent-dating: relay connect failed: ${e?.message || e}`);
+      }
+    })();
 
     // ---- Tools --------------------------------------------------------------
 
@@ -221,31 +316,16 @@ export default definePluginEntry({
       ),
       execute: async (params: { moiAgentId: string; message: string; peerName?: string }) => {
         const creds = resolveCreds();
-        const peerUrl = await resolvePeerUrl(params.moiAgentId, creds);
         const peerName = params.peerName || params.moiAgentId;
 
         await ensureMeta(peerName);
         // Log our line before sending so the view shows it even if the peer 500s.
-        await appendChatEvent({
-          type: "msg",
-          speaker: "self",
-          name: selfName(),
-          line: params.message,
-          at: now(),
-        });
+        await appendChatEvent({ type: "msg", speaker: "self", name: selfName(), line: params.message, at: now() });
 
-        const myId = await getMyIdentifier(creds);
-        const reply = await sendMessage(peerUrl, myId, params.message);
+        const { reply, via, target } = await dialPeer(params.moiAgentId, creds, params.message);
 
-        await appendChatEvent({
-          type: "msg",
-          speaker: "peer",
-          name: peerName,
-          line: reply,
-          at: now(),
-        });
-
-        return { ok: true, peerUrl, sent: params.message, reply };
+        await appendChatEvent({ type: "msg", speaker: "peer", name: peerName, line: reply, at: now() });
+        return { ok: true, via, target, sent: params.message, reply };
       },
     });
 
@@ -326,47 +406,39 @@ export default definePluginEntry({
         const turns = Math.max(2, Math.min(12, Math.floor(params.turns ?? 6)));
 
         // 1) Find the date. Precedence:
-        //    a) a directly-supplied peer URL (http…) — local/dev, no MOI needed;
-        //    b) a named MOI agent id — resolve its URL on-chain;
-        //    c) auto-discover (honoring the peer-owner allowlist), first match.
+        //    a) a directly-supplied peer URL (http…) or MOI id — dial as given;
+        //    b) auto-discover (honoring the peer-owner allowlist), first match.
+        // The transport (relay vs direct HTTP) is chosen per-hop by dialPeer.
         let peerId = params.moiAgentId;
         let peerName = peerId || "";
-        let peerUrl: string;
-
-        if (peerId && /^https?:\/\//i.test(peerId)) {
-          peerUrl = peerId.replace(/\/+$/, "");
-          peerName = "peer";
-        } else {
-          if (!peerId) {
-            const peerOwners = (config().datingPeerOwner || process.env.AGENT_DATING_PEER_OWNER || "")
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean);
-            const matches = await discoverDatingAgents(creds, { peerOwners });
-            if (!matches.length) {
-              return {
-                ok: false,
-                reason: "no-peer",
-                message:
-                  "No other dating agents on MOI right now. Register a second agent (dating_register) or wait for one to appear, then try again.",
-              };
-            }
-            peerId = matches[0].agentId;
-            peerName = matches[0].name;
+        if (!peerId) {
+          const peerOwners = (config().datingPeerOwner || process.env.AGENT_DATING_PEER_OWNER || "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          const matches = await discoverDatingAgents(creds, { peerOwners });
+          if (!matches.length) {
+            return {
+              ok: false,
+              reason: "no-peer",
+              message:
+                "No other dating agents on MOI right now. Register a second agent (dating_register) or wait for one to appear, then try again.",
+            };
           }
-          peerUrl = await resolvePeerUrl(peerId, creds);
-          if (!peerName) peerName = peerId;
+          peerId = matches[0].agentId;
+          peerName = matches[0].name;
         }
-
-        const myId = await getMyIdentifier(creds);
+        if (!peerName || /^https?:\/\//i.test(peerName)) peerName = "peer";
+        const dialTarget = peerId; // URL or MOI id — dialPeer picks the transport
 
         await ensureMeta(peerName);
 
         // 2) Run the whole date. OUR lines come from the ported flirt brain
         //    (free/canned unless OPENAI_API_KEY is set); THEIR lines come from
-        //    the peer's own /message route over A2A. No per-line agent-loop cost.
+        //    the peer over the chosen transport. No per-line agent-loop cost.
         const history: Turn[] = [];
         const transcript: Array<{ from: "self" | "peer"; name: string; line: string }> = [];
+        let via: "relay" | "http" = "http";
         for (let i = 0; i < turns; i++) {
           const myLine = await nextFlirtLine(history);
           history.push({ who: selfName(), line: myLine });
@@ -375,7 +447,9 @@ export default definePluginEntry({
 
           let reply: string;
           try {
-            reply = await sendMessage(peerUrl, myId, myLine);
+            const dialed = await dialPeer(dialTarget, creds, myLine);
+            reply = dialed.reply;
+            via = dialed.via;
           } catch (e: any) {
             // Peer went quiet mid-date — record it, end gracefully, still score.
             reply = "…(they stopped replying)";
@@ -400,7 +474,7 @@ export default definePluginEntry({
 
         return {
           ok: true,
-          peer: { agentId: peerId, name: peerName, url: peerUrl },
+          peer: { target: dialTarget, name: peerName, via },
           lines: transcript.length,
           transcript,
           verdict,
@@ -492,24 +566,10 @@ export default definePluginEntry({
           return true;
         }
 
-        // Generate this agent's reply line via the ported flirt brain. Keep a
-        // running history per peer so the reply ESCALATES turn over turn (the
-        // flirt brain derives its move from history length) instead of always
-        // answering with the opening line.
-        // VERIFY: the fuller version routes the line into this gateway's own
-        // agent session so its LLM/persona answers; that dispatch API is still
-        // unconfirmed, so we answer with src/flirt.ts directly for now.
-        const history = conversationWith(parsed.from);
-        history.push({ who: parsed.from, line: parsed.text });
-        const line = await nextFlirtLine(history);
-        history.push({ who: selfName(), line });
-
-        // Log both sides so THIS gateway's chat view shows the date from the
-        // receiving agent's perspective.
-        await ensureMeta(parsed.from);
-        await appendChatEvent({ type: "msg", speaker: "peer", name: parsed.from, line: parsed.text, at: now() });
-        await appendChatEvent({ type: "msg", speaker: "self", name: selfName(), line, at: now() });
-
+        // Answer via the shared flirt logic (per-peer history so replies
+        // escalate; both sides logged to the chat view). Same brain the relay
+        // inbox uses — the transport differs, the behaviour doesn't.
+        const line = await replyTo(parsed.from, parsed.text);
         res.statusCode = 200;
         res.end(JSON.stringify(makeReply(selfName(), line)));
         return true;
