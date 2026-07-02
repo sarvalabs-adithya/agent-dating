@@ -289,31 +289,39 @@ export default definePluginEntry({
     // dating_date then message peers by MOI id instead of a direct URL.
     let relay: RelayClient | null = null;
     let myRelayId: string | null = null;
+    const listenedIds = new Set<string>();
+    // Start listening on the relay for one of THIS agent's ids. Idempotent, and
+    // callable AFTER startup — so a freshly-registered agent becomes reachable
+    // over the relay immediately, without waiting for a gateway restart.
+    const attachInbox = (id: string): void => {
+      if (!relay || !id || listenedIds.has(id)) return;
+      listenedIds.add(id);
+      if (!myRelayId) myRelayId = id;
+      relay.listen(id, (m) => {
+        void (async () => {
+          const line = await replyTo(m.from, m.text);
+          await relay!.post({ to: m.from, from: m.to, id: m.id, kind: "reply", text: line });
+        })();
+      });
+    };
+
     const relayReady = (async () => {
       const url = relayUrlCfg();
       if (!url) return;
       try {
-        // Prefer explicit relay ids (config/env); else derive from MOI.
+        // Create the client up front so registration can attach ids later even
+        // if this wallet has none yet.
+        relay = new RelayClient(url, relayTokenCfg(), (s) => console.warn(`agent-dating relay: ${s}`));
         const explicit = (config().relayId || process.env.DATING_RELAY_ID || "")
           .split(",").map((s) => s.trim()).filter(Boolean);
         let ids: string[] = explicit;
         if (!ids.length) {
           let creds;
-          try { creds = resolveCreds(); } catch { return; } // no mnemonic/relayId yet → skip
+          try { creds = resolveCreds(); } catch { return; } // no mnemonic yet → attach on register
           ids = await getMyAgentIds(creds);
         }
-        if (!ids.length) { console.warn("agent-dating: relay configured but no relay ids (register on MOI or set relayId)."); return; }
-        myRelayId = ids[0];
-        relay = new RelayClient(url, relayTokenCfg(), (s) => console.warn(`agent-dating relay: ${s}`));
-        for (const id of ids) {
-          relay.listen(id, (m) => {
-            void (async () => {
-              const line = await replyTo(m.from, m.text);
-              await relay!.post({ to: m.from, from: m.to, id: m.id, kind: "reply", text: line });
-            })();
-          });
-        }
-        console.log(`agent-dating: relay connected at ${url} for ${ids.length} id(s); primary ${myRelayId}`);
+        for (const id of ids) attachInbox(id);
+        console.log(`agent-dating: relay connected at ${url} for ${listenedIds.size} id(s); primary ${myRelayId ?? "(none yet)"}`);
       } catch (e: any) {
         console.warn(`agent-dating: relay connect failed: ${e?.message || e}`);
       }
@@ -362,10 +370,14 @@ export default definePluginEntry({
           agentUrl: agentBaseUrl(),
           ...creds,
         });
+        // Become reachable on the relay under the NEW id right away (no restart).
+        await relayReady;
+        attachInbox(agentId);
         return {
           ok: true,
           agentId,
           walletAddress,
+          reachableVia: relay ? "relay + direct" : "direct",
           message: `Registered on MOI as ${agentId} (wallet ${walletAddress}).`,
         };
       },
