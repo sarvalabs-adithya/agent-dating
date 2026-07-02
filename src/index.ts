@@ -48,6 +48,12 @@ const DatingConfigSchema = Type.Object(
     agentUrl: Type.Optional(
       Type.String({ description: "Public base URL published in this agent's MOI profile." }),
     ),
+    datingPeerOwner: Type.Optional(
+      Type.String({
+        description:
+          "Optional: only match dating agents owned by this wallet address (comma-separated for several). Makes A discover only your B on the shared devnet.",
+      }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -56,6 +62,7 @@ interface DatingConfig {
   moiMnemonic?: string;
   moiDerivationPath?: string;
   agentUrl?: string;
+  datingPeerOwner?: string;
 }
 
 // A tiny monotonic-ish message id source. Date.now()/Math.random() are fine in
@@ -173,7 +180,11 @@ export default definePluginEntry({
       parameters: Type.Object({}, { additionalProperties: false }),
       execute: async () => {
         const creds = resolveCreds();
-        const matches = await discoverDatingAgents(creds);
+        const peerOwners = (config().datingPeerOwner || process.env.AGENT_DATING_PEER_OWNER || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const matches = await discoverDatingAgents(creds, { peerOwners });
         return { ok: true, count: matches.length, matches };
       },
     });

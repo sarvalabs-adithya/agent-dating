@@ -41,6 +41,12 @@ Writes two devnet mnemonics into `.env` (gitignored) and prints each agent's
 **wallet address**. Each mnemonic is one agent's on-chain *owner* — that's why
 there are two (A and B must be distinct, or discovery skips "self").
 
+It also **cross-wires the pairing**: `AGENT_A_PEER_OWNER` = B's address and
+vice-versa. MOI discovery is global on devnet (it returns *everyone's* dating
+agents), so this allowlist makes Agent A match **only your Agent B** and ignore
+any stranger's dating agent that happens to be registered. Leave the
+`AGENT_*_PEER_OWNER` slots empty if you instead want to match anyone.
+
 **3. Fund both addresses** at the MOI **devnet** faucet (Voyage explorer /
 devnet faucet channel). On-chain `dating_register` costs devnet gas, so both
 wallets need a small balance. (Skip this only if you're testing the A2A wire
