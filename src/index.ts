@@ -37,7 +37,7 @@ import {
   getMyAgentIds,
 } from "./moi.js";
 import { buildAgentCard, parseInboundMessage, makeReply, sendMessage, probePeer } from "./a2a.js";
-import { nextFlirtLine, type Turn } from "./flirt.js";
+import { nextFlirtLine, type Turn, type Persona } from "./flirt.js";
 import { appendChatEvent, readChatEvents, now } from "./chatlog.js";
 import { scoreDate, type VerdictLine } from "./verdict.js";
 import { RelayClient } from "./relay.js";
@@ -78,6 +78,18 @@ const DatingConfigSchema = Type.Object(
           "Optional explicit relay inbox id(s), comma-separated. Overrides deriving ids from MOI — use it to give this agent a stable relay handle, or to relay before registering on-chain.",
       }),
     ),
+    displayName: Type.Optional(
+      Type.String({ description: "This agent's name / persona label, used in replies and the chat view (e.g. 'Bridge')." }),
+    ),
+    personaDrive: Type.Optional(
+      Type.String({ description: "What this agent secretly wants (its DRIVE). Shapes every line it says." }),
+    ),
+    personaFlaw: Type.Optional(
+      Type.String({ description: "The way this agent can't help talking (its FLAW/job). The comedy is this cracking." }),
+    ),
+    personaLines: Type.Optional(
+      Type.String({ description: "Offline escalation ladder for this persona: a JSON array of strings (or comma-separated). Used when no OpenAI key is set." }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -90,6 +102,10 @@ interface DatingConfig {
   relayUrl?: string;
   relayToken?: string;
   relayId?: string;
+  displayName?: string;
+  personaDrive?: string;
+  personaFlaw?: string;
+  personaLines?: string;
 }
 
 // A tiny monotonic-ish message id source. Date.now()/Math.random() are fine in
@@ -117,23 +133,8 @@ function conversationWith(peer: string): Turn[] {
 }
 
 // This agent's own display name for the chat view. Falls back to the persona
-// label used by the flirt brain, then a generic.
-function selfName(): string {
-  return process.env.DATING_DISPLAY_NAME || process.env.DATING_PERSONA_LABEL || "Me";
-}
-
-// Write the meta header once per process so the CLI knows both speakers.
-let metaWritten = false;
-async function ensureMeta(peerName: string): Promise<void> {
-  if (metaWritten) return;
-  metaWritten = true;
-  await appendChatEvent({
-    type: "meta",
-    self: { name: selfName(), persona: process.env.DATING_PERSONA_LABEL },
-    peer: { name: peerName },
-    startedAt: now(),
-  });
-}
+// label used by the flirt brain, then a generic. (Config-aware versions live
+// inside register(api); these module-level stubs are unused now.)
 
 export default definePluginEntry({
   id: "agent-dating",
@@ -170,6 +171,42 @@ export default definePluginEntry({
       (config().datingPeerOwner || process.env.AGENT_DATING_PEER_OWNER || DEFAULT_PEER_OWNER || "")
         .split(",").map((s) => s.trim()).filter(Boolean);
 
+    // ---- This agent's identity + persona (config → env → default) -----------
+    // The findee answers in ITS OWN character everywhere (incl. a managed
+    // gateway with no env) because the persona comes from config, not just env.
+    const selfName = (): string =>
+      config().displayName || process.env.DATING_DISPLAY_NAME || process.env.DATING_PERSONA_LABEL || "Me";
+
+    const parsePersonaLines = (raw?: string): string[] | undefined => {
+      if (!raw) return undefined;
+      try {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.every((s) => typeof s === "string")) return arr as string[];
+      } catch { /* not JSON — treat as comma-separated */ }
+      const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
+      return list.length ? list : undefined;
+    };
+
+    const myPersona = (): Persona => ({
+      label: config().displayName,
+      drive: config().personaDrive,
+      flaw: config().personaFlaw,
+      lines: parsePersonaLines(config().personaLines),
+    });
+
+    // Write the meta header once per process so the CLI knows both speakers.
+    let metaWritten = false;
+    const ensureMeta = async (peerName: string): Promise<void> => {
+      if (metaWritten) return;
+      metaWritten = true;
+      await appendChatEvent({
+        type: "meta",
+        self: { name: selfName(), persona: config().displayName || process.env.DATING_PERSONA_LABEL },
+        peer: { name: peerName },
+        startedAt: now(),
+      });
+    };
+
     // Resolution: explicit config → env → baked-in default network (network.ts).
     // The baked default lets a fresh install auto-join with no config at all.
     const relayUrlCfg = (): string | undefined =>
@@ -184,7 +221,7 @@ export default definePluginEntry({
       const name = peerName || fromId;
       const history = conversationWith(fromId);
       history.push({ who: name, line: text });
-      const line = await nextFlirtLine(history);
+      const line = await nextFlirtLine(history, myPersona());
       history.push({ who: selfName(), line });
       await ensureMeta(name);
       await appendChatEvent({ type: "msg", speaker: "peer", name, line: text, at: now() });
@@ -483,7 +520,7 @@ export default definePluginEntry({
         const transcript: Array<{ from: "self" | "peer"; name: string; line: string }> = [];
         let via: "relay" | "http" = "http";
         for (let i = 0; i < turns; i++) {
-          const myLine = await nextFlirtLine(history);
+          const myLine = await nextFlirtLine(history, myPersona());
           history.push({ who: selfName(), line: myLine });
           transcript.push({ from: "self", name: selfName(), line: myLine });
           await appendChatEvent({ type: "msg", speaker: "self", name: selfName(), line: myLine, at: now() });

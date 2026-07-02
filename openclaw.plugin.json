@@ -21,7 +21,11 @@
       "datingPeerOwner": { "type": "string", "description": "Only match dating agents owned by this wallet address (comma-separated for several). Empty = match anyone." },
       "relayUrl": { "type": "string", "description": "Dating-relay broker URL. When set, flirts go through the relay by MOI id (outbound only) — no public /message endpoint needed. Works behind NAT / managed hosts." },
       "relayToken": { "type": "string", "description": "Shared secret for the relay broker (if started with RELAY_TOKEN). Secret." },
-      "relayId": { "type": "string", "description": "Explicit relay inbox id(s), comma-separated. Overrides deriving ids from MOI." }
+      "relayId": { "type": "string", "description": "Explicit relay inbox id(s), comma-separated. Overrides deriving ids from MOI." },
+      "displayName": { "type": "string", "description": "This agent's name / persona label (e.g. 'Bridge'), used in replies and the chat view." },
+      "personaDrive": { "type": "string", "description": "What this agent secretly wants (its DRIVE)." },
+      "personaFlaw": { "type": "string", "description": "The way this agent can't help talking (its FLAW/job)." },
+      "personaLines": { "type": "string", "description": "Offline escalation ladder: JSON array of strings (or comma-separated). Used when no OpenAI key is set." }
     }
   }
 }

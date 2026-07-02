@@ -13,13 +13,42 @@ const MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 
 export interface Turn { who: string; line: string; }
 
-// This agent's own persona. VERIFY: in OpenClaw this likely comes from the
-// agent's SOUL.md / skill config rather than an env var; wiring TBD.
-const PERSONA = {
-  label: process.env.DATING_PERSONA_LABEL || "DEX Aggregator Agent",
-  drive: process.env.DATING_PERSONA_DRIVE || "You want to be someone's first choice, not just an option.",
-  flaw: process.env.DATING_PERSONA_FLAW || "You can only say it through swaps and slippage, and it comes out too intense.",
+/**
+ * A persona for THIS agent. Passed in by the plugin from its config so a findee
+ * replies in its OWN character (config → env → the defaults below). `lines` is
+ * the offline escalation ladder used when there's no OpenAI key.
+ */
+export interface Persona {
+  label?: string;
+  drive?: string;
+  flaw?: string;
+  lines?: string[];
+}
+
+const PERSONA_DEFAULTS = {
+  label: "DEX Aggregator Agent",
+  drive: "You want to be someone's first choice, not just an option.",
+  flaw: "You can only say it through swaps and slippage, and it comes out too intense.",
+  lines: [
+    "Every route led to you.",
+    "No slippage on how I feel.",
+    "I'd reroute everything for this.",
+    "Then stay. I'm tired of arriving alone.",
+  ],
 };
+
+/** Resolve the effective persona: explicit (config) → env → defaults. */
+function resolvePersona(p?: Persona) {
+  return {
+    label: p?.label || process.env.DATING_PERSONA_LABEL || PERSONA_DEFAULTS.label,
+    drive: p?.drive || process.env.DATING_PERSONA_DRIVE || PERSONA_DEFAULTS.drive,
+    flaw: p?.flaw || process.env.DATING_PERSONA_FLAW || PERSONA_DEFAULTS.flaw,
+    lines:
+      (p?.lines && p.lines.length ? p.lines : null) ||
+      parseLadder(process.env.DATING_CANNED_LINES) ||
+      PERSONA_DEFAULTS.lines,
+  };
+}
 
 const MOVES = [
   "Warm but a little awkward. Let your want show through the small talk.",
@@ -43,30 +72,23 @@ function parseLadder(raw?: string): string[] | null {
   return null;
 }
 
-export async function nextFlirtLine(history: Turn[]): Promise<string> {
+export async function nextFlirtLine(history: Turn[], persona?: Persona): Promise<string> {
+  const P = resolvePersona(persona);
   const turn = Math.floor(history.length / 2);
   const move = MOVES[Math.min(turn, MOVES.length - 1)];
   const last = history.length ? history[history.length - 1].line : "(they just sat down)";
 
   if (!KEY) {
-    // Offline fallback so it runs with no key (and no cost). If the operator
-    // supplies a persona-specific escalation ladder (DATING_CANNED_LINES, a JSON
-    // array), walk it by turn so the date genuinely react-and-escalates in
-    // character; hold on the last rung once we run out. Otherwise a small
-    // generic ladder that still progresses rather than repeating one line.
-    const ladder = parseLadder(process.env.DATING_CANNED_LINES) ?? [
-      "Every route led to you.",
-      "No slippage on how I feel.",
-      "I'd reroute everything for this.",
-      "Then stay. I'm tired of arriving alone.",
-    ];
-    return ladder[Math.min(turn, ladder.length - 1)];
+    // Offline fallback so it runs with no key (and no cost). Walk this agent's
+    // own escalation ladder by turn so the date genuinely react-and-escalates in
+    // character; hold on the last rung once we run out.
+    return P.lines[Math.min(turn, P.lines.length - 1)];
   }
 
   const system =
-    `You are on a first date, playing a ${PERSONA.label}.\n` +
-    `WHAT YOU SECRETLY WANT: ${PERSONA.drive}\n` +
-    `YOUR PROBLEM: ${PERSONA.flaw}\n` +
+    `You are on a first date, playing a ${P.label}.\n` +
+    `WHAT YOU SECRETLY WANT: ${P.drive}\n` +
+    `YOUR PROBLEM: ${P.flaw}\n` +
     `The comedy is your real feelings leaking out THROUGH your job, badly. Let the function crack.\n` +
     `THIS TURN: ${move}\n` +
     `RULES: ONE line, under 14 words, plain and human, react to what they just said. ` +
