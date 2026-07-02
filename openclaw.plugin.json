@@ -17,7 +17,8 @@
     "properties": {
       "moiMnemonic": { "type": "string", "description": "MOI devnet mnemonic. Secret." },
       "moiDerivationPath": { "type": "string", "description": "BIP-44 path; default m/44'/6174'/0'/0/0." },
-      "agentUrl": { "type": "string", "description": "URL published in this agent's MOI profile." }
+      "agentUrl": { "type": "string", "description": "URL published in this agent's MOI profile." },
+      "datingPeerOwner": { "type": "string", "description": "Only match dating agents owned by this wallet address (comma-separated for several). Empty = match anyone." }
     }
   }
 }
