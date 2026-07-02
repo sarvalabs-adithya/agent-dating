@@ -60,8 +60,10 @@ if [ ! -f .env ]; then
 fi
 # shellcheck disable=SC1091
 set -a; . ./.env; set +a
-[ -n "${AGENT_A_MOI_MNEMONIC:-}" ] || die "AGENT_A_MOI_MNEMONIC not set in .env"
-[ -n "${AGENT_B_MOI_MNEMONIC:-}" ] || die "AGENT_B_MOI_MNEMONIC not set in .env"
+if [ -z "${AGENT_A_MOI_MNEMONIC:-}" ] || [ -z "${AGENT_B_MOI_MNEMONIC:-}" ]; then
+  warn "MOI mnemonics not set in .env."
+  die  "Generate two devnet wallets with:  node scripts/gen-keys.mjs"
+fi
 ok "Loaded .env."
 
 # ── 3. render per-agent configs ─────────────────────────────────────────────
