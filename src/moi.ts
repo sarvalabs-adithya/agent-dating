@@ -179,6 +179,12 @@ export async function discoverDatingAgents(
   return matches;
 }
 
+/** This wallet's MOI agent ids (used as relay inbox keys — one per registered agent). */
+export async function getMyAgentIds(creds: MoiCreds): Promise<string[]> {
+  const { registry } = await openRegistry(creds);
+  return (await registry.getMyAgents()) as string[];
+}
+
 /** This agent's own identifier string, used as the `from` on outbound messages. */
 export async function getMyIdentifier(creds: MoiCreds): Promise<string> {
   const provider = new VoyageProvider(MOI_NETWORK);
