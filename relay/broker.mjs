@@ -55,7 +55,13 @@ function deliver(to, obj) {
   if (!set || set.size === 0) return 0;
   const line = `data: ${JSON.stringify(obj)}\n\n`;
   let n = 0;
-  for (const res of set) { try { res.write(line); n++; } catch { /* dropped */ } }
+  for (const res of set) {
+    // Drop dead streams so a peer that reconnected doesn't get echoed replies
+    // from zombie connections left over after a restart.
+    if (res.writableEnded || res.destroyed) { set.delete(res); continue; }
+    try { res.write(line); n++; } catch { set.delete(res); }
+  }
+  if (set.size === 0) inboxes.delete(to);
   return n;
 }
 
@@ -71,7 +77,10 @@ function record(obj) {
   feed.push(evt);
   if (feed.length > FEED_MAX) feed.shift();
   const line = `data: ${JSON.stringify(evt)}\n\n`;
-  for (const res of viewers) { try { res.write(line); } catch { /* dropped */ } }
+  for (const res of viewers) {
+    if (res.writableEnded || res.destroyed) { viewers.delete(res); continue; }
+    try { res.write(line); } catch { viewers.delete(res); }
+  }
 }
 
 // Self-contained WhatsApp-style live view. No deps, no build; connects to
