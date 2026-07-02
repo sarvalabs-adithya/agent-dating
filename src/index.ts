@@ -75,6 +75,21 @@ function nextMessageId(prefix: string): string {
   return `${prefix}-${msgSeq}`;
 }
 
+// Per-peer conversation memory. The inbound /message handler is stateless per
+// HTTP call, but flirting only works if replies ESCALATE — the flirt brain
+// picks its move from how many turns have passed (history length). Keyed by the
+// peer's `from` id so two simultaneous suitors don't cross wires. Lives for the
+// gateway process; a real date is a handful of turns, so growth is a non-issue.
+const conversations = new Map<string, Turn[]>();
+function conversationWith(peer: string): Turn[] {
+  let convo = conversations.get(peer);
+  if (!convo) {
+    convo = [];
+    conversations.set(peer, convo);
+  }
+  return convo;
+}
+
 // This agent's own display name for the chat view. Falls back to the persona
 // label used by the flirt brain, then a generic.
 function selfName(): string {
@@ -318,12 +333,17 @@ export default definePluginEntry({
           return true;
         }
 
-        // Generate this agent's reply line via the ported flirt brain.
+        // Generate this agent's reply line via the ported flirt brain. Keep a
+        // running history per peer so the reply ESCALATES turn over turn (the
+        // flirt brain derives its move from history length) instead of always
+        // answering with the opening line.
         // VERIFY: the fuller version routes the line into this gateway's own
         // agent session so its LLM/persona answers; that dispatch API is still
         // unconfirmed, so we answer with src/flirt.ts directly for now.
-        const history: Turn[] = [{ who: parsed.from, line: parsed.text }];
+        const history = conversationWith(parsed.from);
+        history.push({ who: parsed.from, line: parsed.text });
         const line = await nextFlirtLine(history);
+        history.push({ who: selfName(), line });
 
         // Log both sides so THIS gateway's chat view shows the date from the
         // receiving agent's perspective.
