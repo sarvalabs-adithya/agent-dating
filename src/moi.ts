@@ -122,10 +122,30 @@ export async function registerOnMoi(opts: {
   return { agentId, walletAddress };
 }
 
-export async function discoverDatingAgents(creds: MoiCreds): Promise<Match[]> {
+export interface DiscoverOpts {
+  /**
+   * Optional allowlist of peer OWNER wallet addresses (as printed by
+   * scripts/gen-keys.mjs). When set, discovery returns ONLY agents owned by one
+   * of these wallets — so your Agent A matches your Agent B and ignores every
+   * other dating agent on the shared devnet. Empty/undefined = match anyone.
+   */
+  peerOwners?: string[];
+}
+
+// Normalize a MOI address/identifier for comparison (case-insensitive, trimmed).
+function normAddr(a?: string): string {
+  return (a || "").trim().toLowerCase();
+}
+
+export async function discoverDatingAgents(
+  creds: MoiCreds,
+  opts: DiscoverOpts = {},
+): Promise<Match[]> {
   const { registry } = await openRegistry(creds);
   const mine = new Set<string>(await registry.getMyAgents());
   const ids = await registry.getAllAgentIds();
+
+  const allow = new Set((opts.peerOwners || []).map(normAddr).filter(Boolean));
 
   const matches: Match[] = [];
   for (const id of ids) {
@@ -133,6 +153,14 @@ export async function discoverDatingAgents(creds: MoiCreds): Promise<Match[]> {
     const { found, profile } = await registry.getAgentProfile(id);
     if (!found || !profile) continue;
     if (profile.status !== AgentStatus.ACTIVE) continue;
+
+    // Peer allowlist: keep only agents owned by an allowed wallet. Match on
+    // owner OR agent_wallet (we register both to the same address) so a format
+    // difference on one field doesn't wrongly exclude the intended partner.
+    if (allow.size > 0) {
+      const owned = allow.has(normAddr(profile.owner)) || allow.has(normAddr(profile.agent_wallet));
+      if (!owned) continue;
+    }
 
     // The dating tag is off-chain — fetch the card and confirm.
     const card = await fetchCard(profile.card_uri);

@@ -64,9 +64,15 @@ async function ensureAgent(key, label) {
 const a = await ensureAgent("AGENT_A_MOI_MNEMONIC", "Agent A");
 const b = await ensureAgent("AGENT_B_MOI_MNEMONIC", "Agent B");
 
+// Cross-wire the peer allowlists so A only dates B and vice-versa on the
+// shared devnet — each agent's PEER_OWNER = the OTHER agent's address.
+setValue("AGENT_A_PEER_OWNER", b.address);
+setValue("AGENT_B_PEER_OWNER", a.address);
+
 writeFileSync(ENV, env);
 
-console.log("\nWrote mnemonics to .env (gitignored; phrases not printed).");
+console.log("\nWrote mnemonics + peer allowlists to .env (gitignored; phrases not printed).");
+console.log("Pairing: A dates only B, B dates only A (AGENT_*_PEER_OWNER set).");
 console.log("\nFund these two DEVNET addresses at the MOI faucet before dating_register:");
 console.log(`  ${a.label}: ${a.address}`);
 console.log(`  ${b.label}: ${b.address}`);
