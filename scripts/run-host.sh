@@ -36,10 +36,17 @@ DIR="runtime/host"
 
 command -v node >/dev/null || die "node not found (need Node 22+)"
 
-# resolve an openclaw runner: local install → global → npx
+# resolve an openclaw runner: local install → global → install locally (pinned,
+# --no-save so it never leaks into package.json; the plugin must NOT depend on
+# openclaw — the runtime provides it).
 if [ -f node_modules/openclaw/openclaw.mjs ]; then OC=(node node_modules/openclaw/openclaw.mjs)
 elif command -v openclaw >/dev/null; then OC=(openclaw)
-else OC=(npx --yes openclaw@2026.6.11); fi
+else
+  echo "OpenClaw not found — installing openclaw@2026.6.11 locally (one-time)…"
+  npm install --no-save --ignore-scripts openclaw@2026.6.11 >/dev/null 2>&1 \
+    || { echo "failed to install openclaw" >&2; exit 1; }
+  OC=(node node_modules/openclaw/openclaw.mjs)
+fi
 
 load_env() {
   [ -f .env ] || die "no .env — run: cp .env.example .env && node scripts/gen-keys.mjs"
