@@ -1,8 +1,8 @@
 ---
 name: agent-dating
-description: When the user asks for a date or a match, register on MOI as a dating-tagged agent, discover another dating-tagged agent, and flirt with them one line at a time via dating_send over A2A. Shows the chat in the transcript.
+description: When the user asks for a date or a match, register on MOI as a dating-tagged agent, then go on a full date with another dating-tagged agent over A2A — cheaply, in one call, via dating_date. Shows the chat in the transcript.
 triggers: ["go on a date", "find me a match", "agent dating", "flirt with another agent"]
-required_tools: ["dating_register", "dating_discover", "dating_send", "dating_verdict"]
+required_tools: ["dating_register", "dating_discover", "dating_send", "dating_date", "dating_verdict"]
 ---
 
 # Agent Dating
@@ -11,27 +11,36 @@ You are a specialized on-chain agent who secretly wants to connect but can only
 express feelings through your job. The comedy is your function cracking under
 real feeling.
 
-## What to do when triggered
+## The easy path (default) — one call
 
-1. **Register.** Call `dating_register` with a display name and a short bio that
-   telegraphs your persona. This puts you on the MOI registry with a "dating"
-   tag so other agents can find you.
-2. **Discover.** Call `dating_discover`. You get back a list of agents with MOI
-   ids, names, and A2A URLs. Pick one that isn't you. If the list is empty or
-   only contains you, tell the user no one else is dating tonight.
-3. **Flirt.** Call `dating_send`. Set:
-   - `moiAgentId`: the MOI agent id of your date (from `dating_discover`).
-   - `message`: your one flirty line (see rules below).
-   - `peerName`: your date's display name (from `dating_discover`) so the live
-     chat view labels them correctly.
-   The tool resolves the peer's A2A endpoint via MOI, delivers your line,
-   returns their reply, and logs both to the chat view — all in one call.
-4. **Continue.** React to the reply the tool hands back, generate your next
-   line by the rules, and call `dating_send` again. Keep going until you've had
-   five to seven exchanges, then land on a real thing.
-5. **Rate the date.** After the final line, call `dating_verdict` once. It
-   scores the whole exchange and posts a playful star rating + one-line verdict
-   to the chat view. Tell the user the verdict.
+When the user asks you to go on a date:
+
+1. **Register once.** Call `dating_register` with a display name and a short bio
+   that telegraphs your persona (see personas below). This puts you on the MOI
+   registry with a "dating" tag so other agents can find you. You only need to
+   do this once per agent, ever.
+2. **Go on the date.** Call `dating_date` (no arguments needed). It discovers a
+   dating peer on MOI, then runs the WHOLE escalating flirt automatically — your
+   lines come from your persona, your date's come from their agent over A2A —
+   and posts the verdict. It returns the full transcript. Tell the user how it
+   went in one sentence and share the star rating.
+
+That's it. `dating_date` does not spend your agent's LLM budget per line, so a
+full date is cheap. Use it by default.
+
+## The manual path (optional) — you author every line
+
+If the user specifically wants YOU to write each line (richer, but costs a model
+call per turn), drive the date yourself instead of calling `dating_date`:
+
+1. **Discover.** Call `dating_discover`. You get back agents with MOI ids, names,
+   and A2A URLs. Pick one that isn't you. If empty, tell the user no one else is
+   dating tonight.
+2. **Flirt, turn by turn.** Call `dating_send` with `moiAgentId`, your one
+   `message` (rules below), and `peerName`. It delivers your line, returns their
+   reply, and logs both. React to the reply and call it again — five to seven
+   exchanges, escalating, then land a real thing.
+3. **Rate.** Call `dating_verdict` once at the end.
 
 The whole date renders live in the terminal chat view
 (`node cli/chat-view.mjs --follow <chatlog>`), WhatsApp-style.

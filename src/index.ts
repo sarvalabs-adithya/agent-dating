@@ -250,6 +250,110 @@ export default definePluginEntry({
     });
 
     registerTool({
+      name: "dating_date",
+      description:
+        "Go on a COMPLETE date in one call: discover a dating peer on MOI (or use the one you name), then run the whole escalating flirt exchange automatically — the plugin authors THIS agent's lines from its own persona, the peer authors theirs over A2A. Cheap: it does NOT burn your agent's LLM loop per line. Logs every line to the chat view and returns the full transcript + verdict. Prefer this over calling dating_send in a loop yourself.",
+      parameters: Type.Object(
+        {
+          moiAgentId: Type.Optional(
+            Type.String({
+              description: "Optional: the MOI id of the specific agent to date. Omit to auto-pick the first discovered dating peer. For local/dev testing you may also pass a peer base URL directly (http://…), which skips MOI discovery entirely.",
+            }),
+          ),
+          turns: Type.Optional(
+            Type.Number({ description: "How many lines THIS agent sends (each gets a reply). Default 6." }),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+      execute: async (params: { moiAgentId?: string; turns?: number }) => {
+        const creds = resolveCreds();
+        const turns = Math.max(2, Math.min(12, Math.floor(params.turns ?? 6)));
+
+        // 1) Find the date. Precedence:
+        //    a) a directly-supplied peer URL (http…) — local/dev, no MOI needed;
+        //    b) a named MOI agent id — resolve its URL on-chain;
+        //    c) auto-discover (honoring the peer-owner allowlist), first match.
+        let peerId = params.moiAgentId;
+        let peerName = peerId || "";
+        let peerUrl: string;
+
+        if (peerId && /^https?:\/\//i.test(peerId)) {
+          peerUrl = peerId.replace(/\/+$/, "");
+          peerName = "peer";
+        } else {
+          if (!peerId) {
+            const peerOwners = (config().datingPeerOwner || process.env.AGENT_DATING_PEER_OWNER || "")
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean);
+            const matches = await discoverDatingAgents(creds, { peerOwners });
+            if (!matches.length) {
+              return {
+                ok: false,
+                reason: "no-peer",
+                message:
+                  "No other dating agents on MOI right now. Register a second agent (dating_register) or wait for one to appear, then try again.",
+              };
+            }
+            peerId = matches[0].agentId;
+            peerName = matches[0].name;
+          }
+          peerUrl = await resolvePeerUrl(peerId, creds);
+          if (!peerName) peerName = peerId;
+        }
+
+        const myId = await getMyIdentifier(creds);
+
+        await ensureMeta(peerName);
+
+        // 2) Run the whole date. OUR lines come from the ported flirt brain
+        //    (free/canned unless OPENAI_API_KEY is set); THEIR lines come from
+        //    the peer's own /message route over A2A. No per-line agent-loop cost.
+        const history: Turn[] = [];
+        const transcript: Array<{ from: "self" | "peer"; name: string; line: string }> = [];
+        for (let i = 0; i < turns; i++) {
+          const myLine = await nextFlirtLine(history);
+          history.push({ who: selfName(), line: myLine });
+          transcript.push({ from: "self", name: selfName(), line: myLine });
+          await appendChatEvent({ type: "msg", speaker: "self", name: selfName(), line: myLine, at: now() });
+
+          let reply: string;
+          try {
+            reply = await sendMessage(peerUrl, myId, myLine);
+          } catch (e: any) {
+            // Peer went quiet mid-date — record it, end gracefully, still score.
+            reply = "…(they stopped replying)";
+            transcript.push({ from: "peer", name: peerName, line: reply });
+            await appendChatEvent({ type: "msg", speaker: "peer", name: peerName, line: reply, at: now() });
+            break;
+          }
+          history.push({ who: peerName, line: reply });
+          transcript.push({ from: "peer", name: peerName, line: reply });
+          await appendChatEvent({ type: "msg", speaker: "peer", name: peerName, line: reply, at: now() });
+        }
+
+        // 3) Score + post the verdict card.
+        const verdict = scoreDate(transcript.map((t) => ({ speaker: t.from, line: t.line })));
+        await appendChatEvent({
+          type: "verdict",
+          rating: verdict.rating,
+          headline: verdict.headline,
+          note: verdict.note,
+          at: now(),
+        });
+
+        return {
+          ok: true,
+          peer: { agentId: peerId, name: peerName, url: peerUrl },
+          lines: transcript.length,
+          transcript,
+          verdict,
+        };
+      },
+    });
+
+    registerTool({
       name: "dating_verdict",
       description:
         "End the date: score the whole exchange and post a playful star rating + verdict to the chat view. Call this once, after the final line (turn 5–7).",

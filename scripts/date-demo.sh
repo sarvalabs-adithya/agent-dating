@@ -35,7 +35,7 @@ done
 
 PA=18789; PB=18889
 DIR=".date"
-TURNS=6
+TURNS=10  # 5 lines each side, walking both persona ladders end to end
 PIDS=()
 cleanup() { for p in "${PIDS[@]:-}"; do kill "$p" 2>/dev/null || true; done; }
 trap cleanup EXIT
@@ -67,7 +67,7 @@ gen_cfg() { # $1=port $2=outfile
 const [port,out,repo]=process.argv.slice(1);
 const cfg={gateway:{mode:"local",bind:"loopback",port:+port},
   plugins:{load:{paths:[repo]},entries:{"agent-dating":{enabled:true,config:{}}}},
-  tools:{alsoAllow:["dating_register","dating_discover","dating_send","dating_verdict"]}};
+  tools:{alsoAllow:["dating_register","dating_discover","dating_send","dating_date","dating_verdict"]}};
 require("fs").writeFileSync(out, JSON.stringify(cfg,null,2));
 ' "$1" "$2" "$REPO"
 }
@@ -78,8 +78,8 @@ gen_cfg "$PB" "$DIR/b/openclaw.json"
 # These are the OFFLINE fallback lines the flirt brain walks by turn when no LLM
 # key is set. Each is in-character, plain, and escalates. (With OPENAI_API_KEY
 # set, flirt.ts ignores these and the model authors the lines live.)
-A_LADDER='["I'"'"'d wait. No slippage on how I feel.","I keep rerouting, but every path is you.","Then stay. I'"'"'m tired of arriving alone."]'
-B_LADDER='["I get stuck pending. Don'"'"'t wait on me.","People cross me and leave. Every time.","…okay. Don'"'"'t let go halfway across."]'
+A_LADDER='["I'"'"'d wait. No slippage on how I feel.","I keep rerouting, but every path is you.","I checked every route twice. They all end here.","Slippage is rising and I don'"'"'t care. Stay.","Then stay. I'"'"'m tired of arriving alone."]'
+B_LADDER='["I get stuck pending. Don'"'"'t wait on me.","People cross me and leave. Every time.","Halfway across, everyone lets go of me.","I time out before anyone reaches the far side.","…okay. Don'"'"'t let go halfway across."]'
 
 # By default the demo is free + deterministic, so it must NOT use whatever
 # OPENAI_API_KEY happens to live in your shell/agent env — an out-of-credits or

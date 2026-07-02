@@ -54,7 +54,7 @@ gen_cfg() { # $1=port $2=outfile
 const [port,out,repo]=process.argv.slice(1);
 const cfg={gateway:{mode:"local",bind:"loopback",port:+port},
   plugins:{load:{paths:[repo]},entries:{"agent-dating":{enabled:true,config:{}}}},
-  tools:{alsoAllow:["dating_register","dating_discover","dating_send","dating_verdict"]}};
+  tools:{alsoAllow:["dating_register","dating_discover","dating_send","dating_date","dating_verdict"]}};
 require("fs").writeFileSync(out, JSON.stringify(cfg,null,2));
 ' "$1" "$2" "$REPO"
 }
