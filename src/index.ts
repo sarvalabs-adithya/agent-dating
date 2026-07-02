@@ -35,7 +35,7 @@ import {
   getSelfCardJson,
   getMyIdentifier,
 } from "./moi.js";
-import { buildAgentCard, parseInboundMessage, makeReply, sendMessage } from "./a2a.js";
+import { buildAgentCard, parseInboundMessage, makeReply, sendMessage, probePeer } from "./a2a.js";
 import { nextFlirtLine, type Turn } from "./flirt.js";
 import { appendChatEvent, readChatEvents, now } from "./chatlog.js";
 import { scoreDate, type VerdictLine } from "./verdict.js";
@@ -246,6 +246,61 @@ export default definePluginEntry({
         });
 
         return { ok: true, peerUrl, sent: params.message, reply };
+      },
+    });
+
+    registerTool({
+      name: "dating_doctor",
+      description:
+        "Diagnose why a date won't connect. Probes a peer's dating endpoints (by MOI id or direct URL) and, if no target is given, every discovered dating peer, and reports exactly what's wrong: unreachable, reachable-but-not-serving-the-plugin (login/HTML page = routes not registered), or healthy. Also reports THIS agent's own published URL so you can check it's serving. Pure diagnostics, no flirting, no cost. Use this the moment a date bounces off a login page.",
+      parameters: Type.Object(
+        {
+          target: Type.Optional(
+            Type.String({ description: "Optional MOI agent id, or a direct base URL (http://…), to probe. Omit to probe all discovered dating peers." }),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+      execute: async (params: { target?: string }) => {
+        const creds = resolveCreds();
+        const selfUrl = agentBaseUrl();
+        const results: Array<{ target: string } & Awaited<ReturnType<typeof probePeer>>> = [];
+
+        const probeOne = async (label: string, url: string) => {
+          const p = await probePeer(url);
+          results.push({ target: label, ...p });
+        };
+
+        if (params.target && /^https?:\/\//i.test(params.target)) {
+          await probeOne(params.target, params.target);
+        } else if (params.target) {
+          const url = await resolvePeerUrl(params.target, creds).catch((e) => {
+            results.push({ target: params.target!, url: "", reachable: false, servesDating: false, detail: `Could not resolve MOI id: ${e?.message || e}` });
+            return null;
+          });
+          if (url) await probeOne(params.target, url);
+        } else {
+          const peerOwners = (config().datingPeerOwner || process.env.AGENT_DATING_PEER_OWNER || "")
+            .split(",").map((s) => s.trim()).filter(Boolean);
+          const matches = await discoverDatingAgents(creds, { peerOwners });
+          if (!matches.length) {
+            return { ok: true, self: { url: selfUrl }, peers: [], summary: "No dating peers discovered on MOI to probe." };
+          }
+          for (const m of matches) await probeOne(`${m.name} (${m.agentId})`, m.url);
+        }
+
+        const healthy = results.filter((r) => r.servesDating).length;
+        return {
+          ok: true,
+          self: {
+            url: selfUrl,
+            note: selfUrl
+              ? `Peers will POST to ${selfUrl.replace(/\/+$/, "")}/message. Confirm that returns JSON, not a login page.`
+              : "No agentUrl configured — peers cannot reach this agent. Set plugins.entries.agent-dating.config.agentUrl.",
+          },
+          peers: results,
+          summary: `${healthy}/${results.length} probed peer(s) are serving the dating plugin.`,
+        };
       },
     });
 
