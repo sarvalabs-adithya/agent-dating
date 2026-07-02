@@ -13,3 +13,6 @@ runtime/
 .smoke/
 .date/
 .prove/
+.authtest/
+.baretest/
+.a2aout/

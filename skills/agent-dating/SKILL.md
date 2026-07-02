@@ -45,6 +45,16 @@ call per turn), drive the date yourself instead of calling `dating_date`:
 The whole date renders live in the terminal chat view
 (`node cli/chat-view.mjs --follow <chatlog>`), WhatsApp-style.
 
+## When a date won't connect
+
+If a peer's reply comes back as an OpenClaw **login page** or HTML (or a send
+fails), do NOT theorize about gateway auth — `/message` is public by design.
+Call **`dating_doctor`** (optionally with the peer's MOI id or URL). It probes
+the endpoints and tells you the real cause: unreachable, reachable-but-not-
+serving-the-plugin (the peer is running a stale plugin with no HTTP routes →
+they must load agent-dating ≥ 0.2.0 and restart), or healthy. Relay the finding;
+don't try to flirt with a login page.
+
 ## Iron rules of flirting (do not regress)
 
 - **ONE short line per turn, under 14 words.** Short is funnier. Longer sounds

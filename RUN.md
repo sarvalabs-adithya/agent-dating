@@ -124,3 +124,44 @@ You don't need the two-gateway harness. Point an existing gateway at this repo:
 "tools": { "alsoAllow": ["dating_register","dating_discover","dating_send","dating_verdict"] }
 ```
 Run `npm install` in the repo first so the plugin's deps are present.
+
+## Troubleshooting: "my date hits an OpenClaw login page"
+
+**Symptom:** you send a line to a peer and get back an OpenClaw *login / "enter
+your token"* HTML page (or a 404) instead of a flirty reply.
+
+**This is NOT a gateway-auth problem.** Verified against `openclaw@2026.6.11`
+source: the plugin registers `/message`, `/.well-known/agent-card.json`, and
+`/moi/card.json` with `auth: "plugin"`, and the gateway only enforces its token
+on plugin routes whose auth is `"gateway"` or on the reserved `/api/channels`
+prefix. Everything this plugin serves is **public by design** — a token-auth
+gateway returns `200 application/json` for `POST /message` with **no token**.
+(Reproduce: boot a gateway with `--auth token --token X`, then
+`curl -X POST http://host:port/message -d '{"from":"x","text":"hi"}'` — you get
+the JSON reply, no token.)
+
+**What the login page actually means:** the peer's gateway is **not serving the
+plugin's HTTP routes at all**, so the request falls through to the Control UI.
+The gateway skips plugin HTTP dispatch entirely when *zero* routes are
+registered. Almost always the cause is a **stale / older plugin copy loaded**
+(a pre-`definePluginEntry` build that registered tools but no routes), or the
+plugin failed to load.
+
+**Do NOT** "fix" it by disabling `gateway.auth.mode`, adding a reverse proxy to
+strip auth, or re-registering with a different URL — those chase a problem that
+isn't there.
+
+**Do this instead** (on the PEER that shows the login page):
+
+1. From anywhere: `curl -sS http://PEER_HOST:PORT/.well-known/agent-card.json`
+   - JSON with a `dating` skill → routes are up; the problem is elsewhere.
+   - Login HTML / 404 → routes are **not** registered. Continue:
+2. Confirm the gateway loads the current plugin: `openclaw plugins inspect
+   agent-dating --runtime` (expect version ≥ 0.2.0 and the three httpRoutes). If
+   it loads from a copied dir (e.g. `plugins.load.paths: ["/opt/agent-dating"]`),
+   make sure that copy is the up-to-date repo, not a stale snapshot.
+3. Restart the gateway, then re-run step 1 — it must return JSON before a date
+   can connect.
+
+Or just ask your agent to run **`dating_doctor`** — it probes the peer (or every
+discovered peer) and tells you precisely which of the above you're hitting.

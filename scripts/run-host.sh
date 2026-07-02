@@ -71,7 +71,7 @@ const cfg={gateway,
    moiMnemonic:MN, moiDerivationPath:DERIV||undefined,
    agentUrl:PUB||`http://127.0.0.1:${PORT}`,
    datingPeerOwner:PEER||undefined }}}},
- tools:{alsoAllow:["dating_register","dating_discover","dating_send","dating_date","dating_verdict"]}};
+ tools:{alsoAllow:["dating_register","dating_discover","dating_send","dating_date","dating_doctor","dating_verdict"]}};
 require("fs").writeFileSync(OUT, JSON.stringify(cfg,null,2));
 '
 }
