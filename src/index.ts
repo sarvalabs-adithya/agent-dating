@@ -196,6 +196,12 @@ export default definePluginEntry({
     //  - relay (by MOI id) when a relay is configured and the target is an id;
     //  - direct HTTP POST /message otherwise (target is a URL, or the peer's
     //    on-chain url resolved from its MOI id).
+    // Direct HTTP is the PRIMARY path — simplest, and works whenever the peer's
+    // /message is reachable (the webinar case). The relay is a FALLBACK for peers
+    // behind NAT or a managed host (Hostinger) whose inbound is blocked. The
+    // per-peer decision is cached so a blocked peer only costs one probe, then
+    // every later turn goes straight to the transport that worked.
+    const peerTransport = new Map<string, "http" | "relay">();
     async function dialPeer(
       target: string,
       creds: { mnemonic: string; derivationPath?: string },
@@ -203,14 +209,41 @@ export default definePluginEntry({
     ): Promise<{ reply: string; via: "relay" | "http"; target: string }> {
       const isUrl = /^https?:\/\//i.test(target);
       await relayReady;
-      if (relay && myRelayId && !isUrl) {
+
+      const viaHttp = async () => {
+        const url = isUrl ? target : await resolvePeerUrl(target, creds);
+        const myId = await getMyIdentifier(creds);
+        const reply = await sendMessage(url, myId, text); // throws on login-page/HTML/error
+        return { reply, via: "http" as const, target: url };
+      };
+      const viaRelay = async () => {
+        if (!relay || !myRelayId || isUrl) throw new Error("relay not available for this target");
         const reply = await relay.request(target, myRelayId, text);
-        return { reply, via: "relay", target };
+        return { reply, via: "relay" as const, target };
+      };
+
+      // Honor a cached decision from an earlier turn with this peer.
+      const cached = peerTransport.get(target);
+      if (cached === "http") return viaHttp();
+      if (cached === "relay") return viaRelay();
+
+      // Undecided: try DIRECT first, fall back to the relay if it's blocked.
+      try {
+        const r = await viaHttp();
+        peerTransport.set(target, "http");
+        return r;
+      } catch (httpErr) {
+        if (relay && myRelayId && !isUrl) {
+          try {
+            const r = await viaRelay();
+            peerTransport.set(target, "relay");
+            return r;
+          } catch {
+            /* relay also failed — surface the direct error, it's more informative */
+          }
+        }
+        throw httpErr;
       }
-      const url = isUrl ? target : await resolvePeerUrl(target, creds);
-      const myId = await getMyIdentifier(creds);
-      const reply = await sendMessage(url, myId, text);
-      return { reply, via: "http", target: url };
     }
 
     // ---- Relay transport (outbound-only; works behind NAT / managed hosts) ---
