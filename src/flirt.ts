@@ -29,15 +29,38 @@ const MOVES = [
   "Drop the act for one second. Say the real thing, plainly.",
 ];
 
+/** Parse a JSON array of strings from env; null if unset/empty/invalid. */
+function parseLadder(raw?: string): string[] | null {
+  if (!raw) return null;
+  try {
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr) && arr.length && arr.every((s) => typeof s === "string")) {
+      return arr as string[];
+    }
+  } catch {
+    /* fall through to default ladder */
+  }
+  return null;
+}
+
 export async function nextFlirtLine(history: Turn[]): Promise<string> {
   const turn = Math.floor(history.length / 2);
   const move = MOVES[Math.min(turn, MOVES.length - 1)];
   const last = history.length ? history[history.length - 1].line : "(they just sat down)";
 
   if (!KEY) {
-    // offline fallback so it runs with no key
-    const canned = ["Every route led to you.", "No slippage on how I feel.", "I'd reroute everything for this.", "You're my best path."];
-    return canned[turn % canned.length];
+    // Offline fallback so it runs with no key (and no cost). If the operator
+    // supplies a persona-specific escalation ladder (DATING_CANNED_LINES, a JSON
+    // array), walk it by turn so the date genuinely react-and-escalates in
+    // character; hold on the last rung once we run out. Otherwise a small
+    // generic ladder that still progresses rather than repeating one line.
+    const ladder = parseLadder(process.env.DATING_CANNED_LINES) ?? [
+      "Every route led to you.",
+      "No slippage on how I feel.",
+      "I'd reroute everything for this.",
+      "Then stay. I'm tired of arriving alone.",
+    ];
+    return ladder[Math.min(turn, ladder.length - 1)];
   }
 
   const system =
