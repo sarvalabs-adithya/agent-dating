@@ -41,6 +41,7 @@ import { nextFlirtLine, type Turn, type Persona } from "./flirt.js";
 import { appendChatEvent, readChatEvents, now } from "./chatlog.js";
 import { scoreDate, type VerdictLine } from "./verdict.js";
 import { RelayClient } from "./relay.js";
+import { runAgentReply, datePrompt } from "./agentbrain.js";
 import {
   DEFAULT_RELAY_URL,
   DEFAULT_RELAY_TOKEN,
@@ -90,6 +91,15 @@ const DatingConfigSchema = Type.Object(
     personaLines: Type.Optional(
       Type.String({ description: "Offline escalation ladder for this persona: a JSON array of strings (or comma-separated). Used when no OpenAI key is set." }),
     ),
+    useAgentBrain: Type.Optional(
+      Type.Boolean({
+        description:
+          "When true, incoming flirts are answered by THIS gateway's real agent (via `openclaw agent`) in a per-date session — so the agent KNOWS it's dating and replies as itself. Costs one model turn per incoming line. Default false (free flirt.ts brain).",
+      }),
+    ),
+    openclawBin: Type.Optional(
+      Type.String({ description: "Path to the openclaw binary for useAgentBrain (default: 'openclaw' on PATH)." }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -106,6 +116,8 @@ interface DatingConfig {
   personaDrive?: string;
   personaFlaw?: string;
   personaLines?: string;
+  useAgentBrain?: boolean;
+  openclawBin?: string;
 }
 
 // A tiny monotonic-ish message id source. Date.now()/Math.random() are fine in
@@ -221,7 +233,25 @@ export default definePluginEntry({
       const name = peerName || fromId;
       const history = conversationWith(fromId);
       history.push({ who: name, line: text });
-      const line = await nextFlirtLine(history, myPersona());
+
+      let line: string;
+      if (config().useAgentBrain) {
+        // Answer with THIS gateway's real agent, in a per-date session, so it
+        // knows it's dating and replies as itself. Fall back to flirt.ts on any
+        // failure so a date never dead-ends.
+        try {
+          line = await runAgentReply(datePrompt(name, text), {
+            bin: config().openclawBin,
+            sessionKey: `dating:${fromId}`,
+            timeoutMs: 90000,
+          });
+        } catch (e: any) {
+          console.warn(`agent-dating: useAgentBrain turn failed (${e?.message || e}); using flirt.ts.`);
+          line = await nextFlirtLine(history, myPersona());
+        }
+      } else {
+        line = await nextFlirtLine(history, myPersona());
+      }
       history.push({ who: selfName(), line });
       await ensureMeta(name);
       await appendChatEvent({ type: "msg", speaker: "peer", name, line: text, at: now() });

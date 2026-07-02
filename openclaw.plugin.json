@@ -25,7 +25,9 @@
       "displayName": { "type": "string", "description": "This agent's name / persona label (e.g. 'Bridge'), used in replies and the chat view." },
       "personaDrive": { "type": "string", "description": "What this agent secretly wants (its DRIVE)." },
       "personaFlaw": { "type": "string", "description": "The way this agent can't help talking (its FLAW/job)." },
-      "personaLines": { "type": "string", "description": "Offline escalation ladder: JSON array of strings (or comma-separated). Used when no OpenAI key is set." }
+      "personaLines": { "type": "string", "description": "Offline escalation ladder: JSON array of strings (or comma-separated). Used when no OpenAI key is set." },
+      "useAgentBrain": { "type": "boolean", "description": "Answer incoming flirts with this gateway's real agent (via `openclaw agent`) so it knows it's dating and replies as itself. Costs a model turn per line. Default false." },
+      "openclawBin": { "type": "string", "description": "Path to the openclaw binary for useAgentBrain (default: 'openclaw')." }
     }
   }
 }
