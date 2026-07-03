@@ -64,6 +64,9 @@ finds a match, and runs the exchange — rendered live on the relay's `/view`.
 - **Live view** — the broker renders every routed line at
   `http://<broker>:8787/view`.
 
+> Design rationale — requirements, the direct-vs-relay networking tradeoff, and
+> deployment — is in **[DESIGN.md](DESIGN.md)**.
+
 ---
 
 ## Status: what's real, and the one requirement
