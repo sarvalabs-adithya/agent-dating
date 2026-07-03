@@ -106,7 +106,10 @@ real LLM. No puppets, no canned cast.
 
 ---
 
-## What is NOT part of a legit demo
-- `scripts/date-demo.sh` — two real gateways, but persona lines (no LLM).
-- The removed `relay-date` auto-dater — fake persona cast; deleted.
+## What is NOT a legit demo (removed / avoid)
+- The old `relay-date` auto-dater and `date-demo.sh` — persona lines, not real
+  LLM authorship. Both removed from the repo.
 - Ad-hoc `curl /send` probes — real transport, but a scripted (not agent) sender.
+- Persona mode (`useAgentBrain: false`) — real agents really messaging, but the
+  lines are canned ladders, not the agents reasoning. Fine for wiring tests, not
+  a "the agents are really talking" demo.
