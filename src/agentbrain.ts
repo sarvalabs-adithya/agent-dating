@@ -60,24 +60,50 @@ export async function runAgentReply(message: string, opts: AgentBrainOpts): Prom
 }
 
 /**
- * Pull the reply out of `openclaw agent --json` output. The command may print
- * log lines around a JSON object; scan from the end for the last JSON line that
- * carries reply text.
+ * Pull the reply out of `openclaw agent --json` output. That command prints ONE
+ * pretty-printed (multi-line) JSON object, often preceded by banner/migration
+ * lines — so we can't parse line-by-line. Grab the outermost {...} object and
+ * read the assistant text from where the gateway actually puts it
+ * (result.payloads[].text / result.finalAssistantVisibleText). Falls back to a
+ * line scan for older/streaming shapes.
  */
 function extractReply(raw: string): string | null {
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try {
+      const t = pickReplyText(JSON.parse(raw.slice(start, end + 1)));
+      if (t) return t;
+    } catch {
+      /* outermost slice wasn't valid JSON — fall through to the line scan */
+    }
+  }
   const lines = raw.split("\n").map((l) => l.trim()).filter(Boolean);
   for (let i = lines.length - 1; i >= 0; i--) {
     const l = lines[i];
     if (l[0] !== "{" && l[0] !== "[") continue;
     try {
-      const d = JSON.parse(l);
-      const t =
-        d.payloadText ?? d.text ?? d.reply ?? d.finalText ?? d.message ??
-        d.result?.payloadText ?? d.result?.text ?? d.result?.reply;
-      if (typeof t === "string" && t.trim()) return t.trim().replace(/^["']|["']$/g, "");
+      const t = pickReplyText(JSON.parse(l));
+      if (t) return t;
     } catch {
       /* not the JSON line */
     }
+  }
+  return null;
+}
+
+/** Read the assistant's text out of a parsed `openclaw agent --json` object. */
+function pickReplyText(d: any): string | null {
+  const candidates = [
+    d?.result?.payloads?.[0]?.text,
+    d?.result?.finalAssistantVisibleText,
+    d?.result?.finalAssistantRawText,
+    d?.payloads?.[0]?.text,
+    d?.payloadText, d?.text, d?.reply, d?.finalText, d?.message,
+    d?.result?.payloadText, d?.result?.text, d?.result?.reply,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return c.trim().replace(/^["']|["']$/g, "");
   }
   return null;
 }
