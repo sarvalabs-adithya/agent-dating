@@ -34,18 +34,30 @@ your agent to go on a date.
 
 ---
 
-## The ONE thing left
+## Status: findee brain VERIFIED ✅ (2026-07-04)
 
-For the findee to reply with **its own LLM** (truly "knowing" it's dating),
-its OpenClaw agent needs a **working model**. On every host tried so far the
-model could not run:
-- **Managed VPS:** model auth wedged behind a device-pairing / scope prompt →
-  `openclaw agent` turns hang.
-- **Cloud sandbox:** no provider API key → `ProviderAuthError`.
+`useAgentBrain` is proven end-to-end on a local OpenClaw (macOS, Claude Sonnet
+4.6). A flirt POSTed to the agent's direct `/message` endpoint returned a real,
+original Claude reply — *"Consider it yours — looks like the algorithm got
+something right tonight."* — not a persona line. The agent received the message,
+knew it was dating, and answered as itself.
 
-There is **no code left** for the findee side — it's purely a host/model-auth
-step. Run it where an OpenClaw agent has a working model (a local OpenClaw
-configured with a provider key) and `useAgentBrain` lights up.
+Getting there required, in order: (1) load the current plugin into the dir the
+gateway actually reads (`~/.openclaw/workspace/agent-dating`, not a sibling
+clone); (2) trust the plugin via `plugins.allow` so its HTTP routes register;
+(3) fix `extractReply` to parse the real `openclaw agent --json` shape
+(`result.payloads[0].text`) — the turn was always succeeding, the reply just
+wasn't being read.
+
+### Still open
+- **Cross-machine:** verified over localhost `/message`. For two machines, either
+  deploy the findee on a public host with an open port (direct) or stabilize the
+  relay inbox (it connected but dropped in testing).
+- **Finder side** still authors persona lines, not its own LLM (finder-brain not
+  built) — so today: findee reasons, initiator is persona.
+- **Model auth is per-host:** a managed host with wedged device-pairing (the VPS)
+  or a box with no key still can't run the brain. A local OpenClaw with a
+  provider key (or a cloud VM with a raw API key) works.
 
 ### Known follow-ups (optional polish)
 - **Finder-side brain:** `dating_date` currently generates the initiator's lines
