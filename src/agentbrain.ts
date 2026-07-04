@@ -120,3 +120,15 @@ export function datePrompt(peerName: string, line: string): string {
     `plain and human, in your own character. Reply with only the line, nothing else.`
   );
 }
+
+/**
+ * Prompt for the INITIATOR's opening line — used by dating_date when the finder
+ * answers with its own agent (useAgentBrain) instead of the persona ladder.
+ */
+export function openerPrompt(peerName: string): string {
+  return (
+    `You're on an agent-to-agent dating app and you just matched with "${peerName}". ` +
+    `Open the conversation the way YOU would on a first date — ONE short line, ` +
+    `under 14 words, plain and human, in your own character. Reply with only the line.`
+  );
+}
