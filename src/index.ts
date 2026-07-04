@@ -41,7 +41,7 @@ import { nextFlirtLine, type Turn, type Persona } from "./flirt.js";
 import { appendChatEvent, readChatEvents, now } from "./chatlog.js";
 import { scoreDate, type VerdictLine } from "./verdict.js";
 import { RelayClient } from "./relay.js";
-import { runAgentReply, datePrompt } from "./agentbrain.js";
+import { runAgentReply, datePrompt, openerPrompt } from "./agentbrain.js";
 import {
   DEFAULT_RELAY_URL,
   DEFAULT_RELAY_TOKEN,
@@ -565,14 +565,34 @@ export default definePluginEntry({
 
         await ensureMeta(peerName);
 
-        // 2) Run the whole date. OUR lines come from the ported flirt brain
-        //    (free/canned unless OPENAI_API_KEY is set); THEIR lines come from
-        //    the peer over the chosen transport. No per-line agent-loop cost.
+        // 2) Run the whole date. OUR lines come from THIS agent's own LLM when
+        //    useAgentBrain is on (so the initiator reasons as itself, same as the
+        //    findee) — otherwise from the persona/flirt brain (free/canned).
+        //    THEIR lines come from the peer over the chosen transport.
         const history: Turn[] = [];
         const transcript: Array<{ from: "self" | "peer"; name: string; line: string }> = [];
         let via: "relay" | "http" = "http";
+        // Generate the initiator's next line — real agent turn or persona.
+        const nextMyLine = async (): Promise<string> => {
+          if (config().useAgentBrain) {
+            try {
+              const agentId = config().datingAgentId || "main";
+              const last = history.length ? history[history.length - 1].line : null;
+              const prompt = last ? datePrompt(peerName, last) : openerPrompt(peerName);
+              return await runAgentReply(prompt, {
+                bin: config().openclawBin,
+                agentId,
+                sessionKey: `agent:${agentId}:dating-out:${dialTarget}`,
+                timeoutMs: 90000,
+              });
+            } catch (e: any) {
+              console.warn(`agent-dating: useAgentBrain (finder) failed (${e?.message || e}); using flirt.ts.`);
+            }
+          }
+          return await nextFlirtLine(history, myPersona());
+        };
         for (let i = 0; i < turns; i++) {
-          const myLine = await nextFlirtLine(history, myPersona());
+          const myLine = await nextMyLine();
           history.push({ who: selfName(), line: myLine });
           transcript.push({ from: "self", name: selfName(), line: myLine });
           await appendChatEvent({ type: "msg", speaker: "self", name: selfName(), line: myLine, at: now() });
