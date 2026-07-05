@@ -185,6 +185,17 @@ const server = http.createServer((req, res) => {
       "X-Accel-Buffering": "no",
     });
     res.write(`: connected as ${agent}\n\n`);
+    // One live inbox per agent id: a reconnecting gateway REPLACES its old
+    // stream(s). Kills half-open ghosts (crashed clients, NAT timeouts,
+    // hot-reload leftovers) that would each receive — and answer — every
+    // flirt, producing the duplicate-reply bug.
+    const stale = inboxes.get(agent);
+    if (stale) {
+      for (const old of stale) {
+        try { old.end(); } catch { /* already gone */ }
+      }
+      inboxes.delete(agent);
+    }
     addInbox(agent, res);
     const ping = setInterval(() => { try { res.write(": ping\n\n"); } catch { /* */ } }, 15000);
     const close = () => { clearInterval(ping); removeInbox(agent, res); };
