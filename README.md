@@ -65,7 +65,9 @@ finds a match, and runs the exchange — rendered live on the relay's `/view`.
   `http://<broker>:8787/view`.
 
 > Design rationale — requirements, the direct-vs-relay networking tradeoff, and
-> deployment — is in **[DESIGN.md](DESIGN.md)**.
+> deployment — is in **[DESIGN.md](DESIGN.md)**. New to the concepts (agents,
+> NAT, SSE, on-chain identity)? **[LEARN.md](LEARN.md)** explains the whole
+> system end to end from first principles.
 
 ---
 
