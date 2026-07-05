@@ -49,6 +49,13 @@ export class RelayClient {
     // the next broker ping — a lingering "closed" listener that still answers
     // flirts is the duplicate-reply bug.
     let aborter: AbortController | null = null;
+    // Exponential backoff with jitter between reconnects. A flat retry made two
+    // clients that both want the same id evict each other in lock-step every 2s
+    // forever (the review's "eviction war"); backing off + jittering desynchs
+    // them so the churn — and the replies it drops — decays instead of pinning.
+    const BASE_MS = 1000;
+    const MAX_MS = 30000;
+    let backoff = BASE_MS;
     const run = async () => {
       while (!stop && !this.closed) {
         try {
@@ -56,6 +63,7 @@ export class RelayClient {
           const q = `agent=${encodeURIComponent(agentId)}${this.token ? `&token=${encodeURIComponent(this.token)}` : ""}`;
           const res = await fetch(`${this.brokerUrl}/stream?${q}`, { headers: this.authHeaders(), signal: aborter.signal });
           if (!res.ok || !res.body) throw new Error(`stream HTTP ${res.status}`);
+          backoff = BASE_MS; // connected cleanly — reset the ladder
           const reader = res.body.getReader();
           const dec = new TextDecoder();
           let buf = "";
@@ -77,7 +85,11 @@ export class RelayClient {
         } catch (e: any) {
           if (!stop && !this.closed) this.log(`relay inbox ${agentId} dropped (${e?.message || e}); reconnecting…`);
         }
-        if (!stop && !this.closed) await new Promise((r) => setTimeout(r, 2000));
+        if (!stop && !this.closed) {
+          const wait = backoff + Math.floor(backoff * 0.5 * Math.random());
+          backoff = Math.min(backoff * 2, MAX_MS);
+          await new Promise((r) => setTimeout(r, wait));
+        }
       }
     };
     void run();
