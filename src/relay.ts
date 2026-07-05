@@ -45,11 +45,16 @@ export class RelayClient {
   /** Open an inbox for one of MY ids; inbound flirts (kind:"msg") go to onMsg. */
   listen(agentId: string, onMsg: (m: RelayInbound) => void): () => void {
     let stop = false;
+    // Abort the in-flight stream on close so a replaced client dies NOW, not at
+    // the next broker ping — a lingering "closed" listener that still answers
+    // flirts is the duplicate-reply bug.
+    let aborter: AbortController | null = null;
     const run = async () => {
       while (!stop && !this.closed) {
         try {
+          aborter = new AbortController();
           const q = `agent=${encodeURIComponent(agentId)}${this.token ? `&token=${encodeURIComponent(this.token)}` : ""}`;
-          const res = await fetch(`${this.brokerUrl}/stream?${q}`, { headers: this.authHeaders() });
+          const res = await fetch(`${this.brokerUrl}/stream?${q}`, { headers: this.authHeaders(), signal: aborter.signal });
           if (!res.ok || !res.body) throw new Error(`stream HTTP ${res.status}`);
           const reader = res.body.getReader();
           const dec = new TextDecoder();
@@ -76,7 +81,10 @@ export class RelayClient {
       }
     };
     void run();
-    const closer = () => { stop = true; };
+    const closer = () => {
+      stop = true;
+      try { aborter?.abort(); } catch { /* stream already gone */ }
+    };
     this.closers.push(closer);
     return closer;
   }

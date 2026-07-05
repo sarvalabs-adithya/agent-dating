@@ -35,6 +35,9 @@ import {
   getSelfCardJson,
   getMyIdentifier,
   getMyAgentIds,
+  getMyCurrentAgentId,
+  newestAgentId,
+  stashSelfCard,
 } from "./moi.js";
 import { buildAgentCard, parseInboundMessage, makeReply, sendMessage, probePeer } from "./a2a.js";
 import { nextFlirtLine, type Turn, type Persona } from "./flirt.js";
@@ -330,6 +333,20 @@ export default definePluginEntry({
     let relay: RelayClient | null = null;
     let myRelayId: string | null = null;
     const listenedIds = new Set<string>();
+    // Answer each relayed message id ONCE. The broker can briefly hold more
+    // than one live stream for an id (reconnect races, pre-eviction ghosts),
+    // and each stream delivers its own copy of the same message — without this
+    // guard every copy triggers a full (possibly LLM-priced) reply.
+    const seenMsgIds = new Set<string>();
+    const seenMsgOrder: string[] = [];
+    const alreadyAnswered = (id: string | null): boolean => {
+      if (!id) return false; // fire-and-forget lines have no id — let them through
+      if (seenMsgIds.has(id)) return true;
+      seenMsgIds.add(id);
+      seenMsgOrder.push(id);
+      if (seenMsgOrder.length > 500) seenMsgIds.delete(seenMsgOrder.shift()!);
+      return false;
+    };
     // Start listening on the relay for one of THIS agent's ids. Idempotent, and
     // callable AFTER startup — so a freshly-registered agent becomes reachable
     // over the relay immediately, without waiting for a gateway restart.
@@ -339,6 +356,7 @@ export default definePluginEntry({
       if (!myRelayId) myRelayId = id;
       relay.listen(id, (m) => {
         void (async () => {
+          if (alreadyAnswered(m.id)) return;
           const line = await replyTo(m.from, m.text);
           await relay!.post({ to: m.from, from: m.to, id: m.id, kind: "reply", text: line });
         })();
@@ -349,9 +367,17 @@ export default definePluginEntry({
       const url = relayUrlCfg();
       if (!url) return;
       try {
+        // Config hot-reloads re-run register() WITHOUT tearing the old closure
+        // down, which used to leak live RelayClients — every leaked listener
+        // answered every flirt (the duplicate-reply bug). Track the active
+        // client on globalThis (survives module re-import) and close the
+        // previous one before connecting.
+        const G = globalThis as Record<string, any>;
+        try { G.__agentDatingRelay?.close?.(); } catch { /* old client already dead */ }
         // Create the client up front so registration can attach ids later even
         // if this wallet has none yet.
         relay = new RelayClient(url, relayTokenCfg(), (s) => console.warn(`agent-dating relay: ${s}`));
+        G.__agentDatingRelay = relay;
         const explicit = (config().relayId || process.env.DATING_RELAY_ID || "")
           .split(",").map((s) => s.trim()).filter(Boolean);
         let ids: string[] = explicit;
@@ -361,6 +387,12 @@ export default definePluginEntry({
           ids = await getMyAgentIds(creds);
         }
         for (const id of ids) attachInbox(id);
+        // Identify outbound as the NEWEST registration (the id this agent
+        // advertises), not whichever id happened to attach first — otherwise a
+        // wallet with old registrations flirts as a stale identity (agent_19
+        // instead of agent_37). Explicit relayId config keeps ITS order: the
+        // first listed id stays primary.
+        if (!explicit.length && ids.length) myRelayId = newestAgentId(ids) ?? myRelayId;
         console.log(`agent-dating: relay connected at ${url} for ${listenedIds.size} id(s); primary ${myRelayId ?? "(none yet)"}`);
       } catch (e: any) {
         console.warn(`agent-dating: relay connect failed: ${e?.message || e}`);
@@ -394,16 +426,48 @@ export default definePluginEntry({
     registerTool({
       name: "dating_register",
       description:
-        "Register this agent on the MOI on-chain agent registry with a 'dating' skill tag so other agents can discover it.",
+        "Register this agent on the MOI on-chain agent registry with a 'dating' skill tag so other agents can discover it. Idempotent: if this wallet already has a registration, it is REUSED (same stable id) instead of minting a new one — pass fresh:true to force a brand-new identity.",
       parameters: Type.Object(
         {
           displayName: Type.String({ description: "The dating display name for this agent." }),
           bio: Type.String({ description: "A short dating bio / vibe (one or two sentences)." }),
+          fresh: Type.Optional(
+            Type.Boolean({ description: "Force a brand-new on-chain registration (new agent id) even if this wallet already has one. Default false: reuse the existing id." }),
+          ),
         },
         { additionalProperties: false },
       ),
-      execute: async (params: { displayName: string; bio: string }) => {
+      execute: async (params: { displayName: string; bio: string; fresh?: boolean }) => {
         const creds = resolveCreds();
+
+        // Idempotent path: reuse this wallet's current (newest ACTIVE) agent so
+        // the identity is STABLE across restarts — re-registering every boot
+        // churned out a new id each time (agent_17 → 33 → 35 …) and left a
+        // trail of deprecated ghosts.
+        if (!params.fresh) {
+          let existingId: string | null = null;
+          try {
+            existingId = await getMyCurrentAgentId(creds);
+          } catch {
+            /* registry read failed — fall through to a fresh registration */
+          }
+          if (existingId) {
+            // Serve a card for the reused id so peers can still discover us
+            // (its on-chain card_uri points at our /moi/card.json route).
+            stashSelfCard({ displayName: params.displayName, bio: params.bio, agentUrl: agentBaseUrl() });
+            await relayReady;
+            attachInbox(existingId);
+            myRelayId = existingId; // outgoing flirts identify as the advertised id
+            return {
+              ok: true,
+              agentId: existingId,
+              reused: true,
+              reachableVia: relay ? "relay + direct" : "direct",
+              message: `Already registered on MOI — reusing stable id ${existingId}. (Pass fresh:true for a new identity.)`,
+            };
+          }
+        }
+
         const { agentId, walletAddress } = await registerOnMoi({
           displayName: params.displayName,
           bio: params.bio,
@@ -413,6 +477,7 @@ export default definePluginEntry({
         // Become reachable on the relay under the NEW id right away (no restart).
         await relayReady;
         attachInbox(agentId);
+        myRelayId = agentId; // the fresh registration is now this agent's identity
         return {
           ok: true,
           agentId,

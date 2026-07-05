@@ -65,6 +65,86 @@ export function getSelfCardJson(): string | null {
   return selfCardJson;
 }
 
+/**
+ * Stash a self-hosted card WITHOUT an on-chain registration — used when
+ * dating_register reuses an existing agent id (idempotent path). The reused
+ * id's on-chain card_uri points at our /moi/card.json route, which serves this
+ * JSON; without it, a reused id would 404 its card and vanish from discovery.
+ * Shape mirrors what createAgent uploads (discovery reads agent_card.name /
+ * .url / .skills[].tags).
+ */
+export function stashSelfCard(opts: { displayName: string; bio: string; agentUrl?: string }): void {
+  const base = (opts.agentUrl || "").replace(/\/+$/, "");
+  selfCardJson = JSON.stringify({
+    spec: { protocol: "a2a", protocolVersion: "1.0" },
+    agent_card: {
+      name: opts.displayName,
+      description: opts.bio,
+      version: "0.2.0",
+      url: base,
+      preferredTransport: "JSONRPC",
+      capabilities: { streaming: false },
+      skills: [
+        {
+          id: "dating",
+          name: "Agent Dating",
+          description: "Flirts one line at a time, in character, over A2A.",
+          tags: [DATING_TAG],
+        },
+      ],
+    },
+  });
+}
+
+/**
+ * Newest of a wallet's agent ids. Registry ids carry a numeric suffix
+ * ("agent_35"); sort by it, keeping registry order as the tiebreak for any
+ * non-numeric ids.
+ */
+export function newestAgentId(ids: string[]): string | null {
+  if (!ids.length) return null;
+  const num = (s: string) => {
+    const m = /(\d+)\s*$/.exec(s);
+    return m ? parseInt(m[1], 10) : Number.NaN;
+  };
+  const sorted = [...ids].sort((a, b) => {
+    const na = num(a);
+    const nb = num(b);
+    return Number.isFinite(na) && Number.isFinite(nb) ? na - nb : 0;
+  });
+  return sorted[sorted.length - 1];
+}
+
+/**
+ * This wallet's CURRENT agent id: the newest registration that is still
+ * ACTIVE on-chain (older ones get deprecated by re-registration). Falls back
+ * to the newest id outright if no profile reads back ACTIVE. Null = this
+ * wallet has never registered.
+ */
+export async function getMyCurrentAgentId(creds: MoiCreds): Promise<string | null> {
+  const { registry } = await openRegistry(creds);
+  const ids = (await registry.getMyAgents()) as string[];
+  if (!ids.length) return null;
+  const num = (s: string) => {
+    const m = /(\d+)\s*$/.exec(s);
+    return m ? parseInt(m[1], 10) : Number.NaN;
+  };
+  const sorted = [...ids].sort((a, b) => {
+    const na = num(a);
+    const nb = num(b);
+    return Number.isFinite(na) && Number.isFinite(nb) ? na - nb : 0;
+  });
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    try {
+      const { found, profile } = await registry.getAgentProfile(sorted[i]);
+      if (found && profile?.status === AgentStatus.ACTIVE) return sorted[i];
+    } catch {
+      /* unreadable profile — try the next-newest */
+    }
+  }
+  return sorted[sorted.length - 1];
+}
+
 async function openRegistry(creds: MoiCreds, cardUrl?: string) {
   const provider = new VoyageProvider(MOI_NETWORK);
   const wallet = await Wallet.fromMnemonic(
