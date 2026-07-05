@@ -189,8 +189,15 @@ const server = http.createServer((req, res) => {
     // stream(s). Kills half-open ghosts (crashed clients, NAT timeouts,
     // hot-reload leftovers) that would each receive — and answer — every
     // flirt, producing the duplicate-reply bug.
+    //
+    // SECURITY: eviction is keyed only on the (public) agent id, so a client
+    // that connects as someone else's id displaces them. Run the broker with
+    // RELAY_TOKEN set on any shared/exposed deployment — without it, any
+    // reachable party can take over an inbox. Evictions are logged so a
+    // takeover (or an unexpected reconnect storm) is at least visible.
     const stale = inboxes.get(agent);
-    if (stale) {
+    if (stale && stale.size) {
+      console.log(`relay: ${agent} reconnected — evicting ${stale.size} prior stream(s)${TOKEN ? "" : " [no token: eviction is unauthenticated]"}`);
       for (const old of stale) {
         try { old.end(); } catch { /* already gone */ }
       }

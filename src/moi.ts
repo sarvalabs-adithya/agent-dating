@@ -115,13 +115,20 @@ export function newestAgentId(ids: string[]): string | null {
   return sorted[sorted.length - 1];
 }
 
+export interface CurrentAgent {
+  agentId: string;
+  /** The id's on-chain base url (empty if none). dating_register compares this
+   *  against the current agentUrl to decide reuse-vs-re-register. */
+  url: string;
+}
+
 /**
- * This wallet's CURRENT agent id: the newest registration that is still
- * ACTIVE on-chain (older ones get deprecated by re-registration). Falls back
- * to the newest id outright if no profile reads back ACTIVE. Null = this
+ * This wallet's CURRENT agent: the newest registration that is still ACTIVE
+ * on-chain (older ones get deprecated by re-registration), plus its on-chain
+ * url. Falls back to the newest id if no profile reads back ACTIVE. Null = this
  * wallet has never registered.
  */
-export async function getMyCurrentAgentId(creds: MoiCreds): Promise<string | null> {
+export async function getMyCurrentAgentId(creds: MoiCreds): Promise<CurrentAgent | null> {
   const { registry } = await openRegistry(creds);
   const ids = (await registry.getMyAgents()) as string[];
   if (!ids.length) return null;
@@ -137,12 +144,14 @@ export async function getMyCurrentAgentId(creds: MoiCreds): Promise<string | nul
   for (let i = sorted.length - 1; i >= 0; i--) {
     try {
       const { found, profile } = await registry.getAgentProfile(sorted[i]);
-      if (found && profile?.status === AgentStatus.ACTIVE) return sorted[i];
+      if (found && profile?.status === AgentStatus.ACTIVE) {
+        return { agentId: sorted[i], url: profile.url || "" };
+      }
     } catch {
       /* unreadable profile — try the next-newest */
     }
   }
-  return sorted[sorted.length - 1];
+  return { agentId: sorted[sorted.length - 1], url: "" };
 }
 
 async function openRegistry(creds: MoiCreds, cardUrl?: string) {

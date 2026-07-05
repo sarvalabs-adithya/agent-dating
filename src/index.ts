@@ -444,27 +444,39 @@ export default definePluginEntry({
         // the identity is STABLE across restarts — re-registering every boot
         // churned out a new id each time (agent_17 → 33 → 35 …) and left a
         // trail of deprecated ghosts.
+        const wantUrl = (agentBaseUrl() || "").replace(/\/+$/, "").toLowerCase();
         if (!params.fresh) {
-          let existingId: string | null = null;
+          let existing: { agentId: string; url: string } | null = null;
           try {
-            existingId = await getMyCurrentAgentId(creds);
+            existing = await getMyCurrentAgentId(creds);
           } catch {
             /* registry read failed — fall through to a fresh registration */
           }
-          if (existingId) {
+          // Only reuse if the id's ON-CHAIN url still matches where we serve now.
+          // If the public url rotated (e.g. an ephemeral tunnel), the old id's
+          // card_uri points at a dead address and peers can't discover us —
+          // so re-register instead of silently reusing a stale, invisible id.
+          const onChainUrl = (existing?.url || "").replace(/\/+$/, "").toLowerCase();
+          const urlStillValid = !wantUrl || onChainUrl === wantUrl;
+          if (existing && urlStillValid) {
             // Serve a card for the reused id so peers can still discover us
             // (its on-chain card_uri points at our /moi/card.json route).
             stashSelfCard({ displayName: params.displayName, bio: params.bio, agentUrl: agentBaseUrl() });
             await relayReady;
-            attachInbox(existingId);
-            myRelayId = existingId; // outgoing flirts identify as the advertised id
+            attachInbox(existing.agentId);
+            myRelayId = existing.agentId; // outgoing flirts identify as the advertised id
             return {
               ok: true,
-              agentId: existingId,
+              agentId: existing.agentId,
               reused: true,
               reachableVia: relay ? "relay + direct" : "direct",
-              message: `Already registered on MOI — reusing stable id ${existingId}. (Pass fresh:true for a new identity.)`,
+              message: `Already registered on MOI — reusing stable id ${existing.agentId}. (Pass fresh:true for a new identity.)`,
             };
+          }
+          if (existing && !urlStillValid) {
+            console.warn(
+              `agent-dating: on-chain url for ${existing.agentId} (${existing.url || "none"}) != current ${wantUrl} — re-registering so discovery stays valid.`,
+            );
           }
         }
 
