@@ -12,7 +12,8 @@
  */
 
 import { appendFile, mkdir, readFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 
 export type ChatEvent =
   | {
@@ -39,7 +40,14 @@ export type ChatEvent =
     };
 
 export function chatLogPath(): string {
-  return process.env.AGENT_DATING_CHATLOG || "agent-dating.chat.jsonl";
+  if (process.env.AGENT_DATING_CHATLOG) return process.env.AGENT_DATING_CHATLOG;
+  // Stable per-agent default, mirroring OpenClaw's own home resolution
+  // (OPENCLAW_HOME || HOME || homedir, then .openclaw/). A cwd-relative
+  // default broke two ways: a service-run gateway has cwd / (log lands
+  // nowhere findable), and two gateways started from the same directory
+  // share one file (every date doubled — each side mirrors the same lines).
+  const base = process.env.OPENCLAW_HOME?.trim() || process.env.HOME?.trim() || homedir();
+  return join(base, ".openclaw", "agent-dating.chat.jsonl");
 }
 
 /**
