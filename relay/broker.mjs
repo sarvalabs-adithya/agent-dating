@@ -28,6 +28,10 @@ import http from "node:http";
 
 const PORT = Number(process.env.RELAY_PORT || 8787);
 const TOKEN = process.env.RELAY_TOKEN || "";
+// RELAY_PUBLIC_VIEW=0 disables the firehose /events stream (no ?agent=) so the
+// ONLY way to watch is a per-agent scoped link with its view key. Default on:
+// the global /view is handy for demos and single-operator brokers.
+const PUBLIC_VIEW = (process.env.RELAY_PUBLIC_VIEW ?? "1") !== "0";
 
 /** agentId -> Set<ServerResponse> (an agent may hold more than one stream). */
 const inboxes = new Map();
@@ -80,21 +84,38 @@ function putCard(key, json) {
   cards.set(key, json);
 }
 
+// --- per-agent view keys --------------------------------------------------
+// An agent publishes a secret view key (derived from its wallet, so only its
+// owner can mint it); /events?agent=<id>&key=<key> then streams ONLY that
+// agent's threads. Same trust model as cards/inboxes on a tokenless broker
+// (last write wins — see the eviction SECURITY note); run RELAY_TOKEN on any
+// shared deployment.
+const VIEWKEYS_MAX = 500;
+const viewKeys = new Map(); // agent id -> key
+function putViewKey(agent, key) {
+  if (!viewKeys.has(agent) && viewKeys.size >= VIEWKEYS_MAX) {
+    viewKeys.delete(viewKeys.keys().next().value);
+  }
+  viewKeys.set(agent, key);
+}
+
 // --- live web view: tee every routed message to a browser feed ---------------
 // The broker already sees every line, so it can also *show* them. `record` keeps
 // a small replay ring and fans each message out to any /events (SSE) viewers,
 // which the /view page renders WhatsApp-style, live.
 const FEED_MAX = 400;
 const feed = [];
-const viewers = new Set();
+const viewers = new Set(); // { res, agent } — agent=null means the global stream
+const involves = (evt, agent) => evt.from === agent || evt.to === agent;
 function record(obj) {
   const evt = { ...obj, at: new Date().toISOString() };
   feed.push(evt);
   if (feed.length > FEED_MAX) feed.shift();
   const line = `data: ${JSON.stringify(evt)}\n\n`;
-  for (const res of viewers) {
-    if (res.writableEnded || res.destroyed) { viewers.delete(res); continue; }
-    try { res.write(line); } catch { viewers.delete(res); }
+  for (const v of viewers) {
+    if (v.res.writableEnded || v.res.destroyed) { viewers.delete(v); continue; }
+    if (v.agent && !involves(evt, v.agent)) continue; // scoped viewer: not their thread
+    try { v.res.write(line); } catch { viewers.delete(v); }
   }
 }
 
@@ -132,7 +153,9 @@ const VIEW_HTML = `<!doctype html>
 <script>
 (function(){
   var qs=new URLSearchParams(location.search), token=qs.get("token");
+  var agentF=qs.get("agent"), keyF=qs.get("key");
   var main=document.getElementById("main"), empty=document.getElementById("empty"), st=document.getElementById("st");
+  if(agentF){ document.querySelector("header h1").textContent="Agent Dating — "+agentF+" (private)"; }
   var convos=Object.create(null), pal=["#008069","#6a3ea1","#c1573d","#1f6f8b","#b5427a","#3a7d34"], ci=0, cmap=Object.create(null);
   function color(id){ if(!(id in cmap)) cmap[id]=pal[(ci++)%pal.length]; return cmap[id]; }
   function shortId(s){ return s.length>16 ? s.slice(0,6)+"…"+s.slice(-4) : s; }
@@ -167,9 +190,13 @@ const VIEW_HTML = `<!doctype html>
     var tm=document.createElement("span"); tm.className="tm"; tm.textContent=hhmm(e.at); b.appendChild(tm);
     row.appendChild(b); c.msgs.appendChild(row); c.msgs.scrollTop=c.msgs.scrollHeight;
   }
-  var es=new EventSource("/events"+(token?("?token="+encodeURIComponent(token)):""));
+  var esQ=[];
+  if(token) esQ.push("token="+encodeURIComponent(token));
+  if(agentF) esQ.push("agent="+encodeURIComponent(agentF));
+  if(keyF) esQ.push("key="+encodeURIComponent(keyF));
+  var es=new EventSource("/events"+(esQ.length?("?"+esQ.join("&")):""));
   es.onopen=function(){ st.textContent="live"; };
-  es.onerror=function(){ st.textContent="reconnecting…"; };
+  es.onerror=function(){ st.textContent=agentF?"reconnecting… (if this persists, the view key may be wrong or not yet published)":"reconnecting…"; };
   es.onmessage=function(ev){ try{ add(JSON.parse(ev.data)); }catch(e){} };
 })();
 </script>
@@ -298,7 +325,24 @@ const server = http.createServer((req, res) => {
   }
 
   // Live view feed (SSE): replays the recent ring, then streams new messages.
+  // With ?agent=<id>&key=<view key>, the stream is SCOPED to that agent's
+  // threads and requires its published view key. Without ?agent=, it's the
+  // global firehose — available only while RELAY_PUBLIC_VIEW != 0.
   if (req.method === "GET" && url.pathname === "/events") {
+    const agent = (url.searchParams.get("agent") || "").trim();
+    const key = (url.searchParams.get("key") || "").trim();
+    if (agent) {
+      const want = viewKeys.get(agent);
+      if (!want || key !== want) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "bad or missing view key for that agent" }));
+        return;
+      }
+    } else if (!PUBLIC_VIEW) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "global view disabled — use your agent's private view link" }));
+      return;
+    }
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
@@ -306,12 +350,37 @@ const server = http.createServer((req, res) => {
       "X-Accel-Buffering": "no",
     });
     res.write(": connected\n\n");
-    for (const evt of feed) res.write(`data: ${JSON.stringify(evt)}\n\n`);
-    viewers.add(res);
+    for (const evt of feed) {
+      if (agent && !involves(evt, agent)) continue;
+      res.write(`data: ${JSON.stringify(evt)}\n\n`);
+    }
+    const viewer = { res, agent: agent || null };
+    viewers.add(viewer);
     const ping = setInterval(() => { try { res.write(": ping\n\n"); } catch { /* */ } }, 15000);
-    const close = () => { clearInterval(ping); viewers.delete(res); };
+    const close = () => { clearInterval(ping); viewers.delete(viewer); };
     req.on("close", close);
     req.on("error", close);
+    return;
+  }
+
+  // Publish an agent's view key (see the viewKeys block above).
+  if (req.method === "POST" && url.pathname === "/viewkey") {
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 1 << 16) req.destroy(); });
+    req.on("end", () => {
+      let m;
+      try { m = JSON.parse(body); } catch { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "bad json" })); return; }
+      const agent = typeof m?.agent === "string" ? m.agent.trim() : "";
+      const key = typeof m?.key === "string" ? m.key.trim() : "";
+      if (!agent || !key) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "expected { agent, key }" }));
+        return;
+      }
+      putViewKey(agent, key);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    });
     return;
   }
 

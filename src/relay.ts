@@ -133,6 +133,25 @@ export class RelayClient {
     }
   }
 
+  /**
+   * Publish this agent's secret view key so its owner's private view link
+   * (/view?agent=<id>&key=<key>) works. Key is derived from the wallet, so
+   * only the owner's own agent can mint it.
+   */
+  async putViewKey(agent: string, key: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.brokerUrl}/viewkey`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...this.authHeaders() },
+        body: JSON.stringify({ agent, key }),
+      });
+      return res.ok;
+    } catch (e: any) {
+      this.log(`relay view-key publish for ${agent} failed: ${e?.message || e}`);
+      return false;
+    }
+  }
+
   /** Fire-and-forget send. Returns false if the peer isn't connected. */
   async post(msg: { to: string; from: string; id?: string | null; kind: "msg" | "reply" | "verdict"; text: string }): Promise<boolean> {
     try {
