@@ -82,6 +82,12 @@ const DatingConfigSchema = Type.Object(
           "Optional explicit relay inbox id(s), comma-separated. Overrides deriving ids from MOI — use it to give this agent a stable relay handle, or to relay before registering on-chain.",
       }),
     ),
+    preferRelay: Type.Optional(
+      Type.Boolean({
+        description:
+          "Try the relay BEFORE direct HTTP when dialing peers (default false: direct first). Set it when you want every line to pass through the broker — e.g. so its live /view shows a date between two agents that could otherwise reach each other directly.",
+      }),
+    ),
     displayName: Type.Optional(
       Type.String({ description: "This agent's name / persona label, used in replies and the chat view (e.g. 'Bridge')." }),
     ),
@@ -118,6 +124,7 @@ interface DatingConfig {
   relayUrl?: string;
   relayToken?: string;
   relayId?: string;
+  preferRelay?: boolean;
   displayName?: string;
   personaDrive?: string;
   personaFlaw?: string;
@@ -306,6 +313,22 @@ export default definePluginEntry({
       const cached = peerTransport.get(target);
       if (cached === "http") return viaHttp();
       if (cached === "relay") return viaRelay();
+
+      // preferRelay flips the order: relay first, direct as the fallback. For
+      // when every line should pass through the broker (its /view is the demo
+      // screen) even though the peer is directly reachable — e.g. two agents
+      // on the same laptop.
+      if (config().preferRelay && relay && myRelayId && !isUrl) {
+        try {
+          const r = await viaRelay();
+          peerTransport.set(target, "relay");
+          return r;
+        } catch {
+          const r = await viaHttp();
+          peerTransport.set(target, "http");
+          return r;
+        }
+      }
 
       // Undecided: try DIRECT first, fall back to the relay if it's blocked.
       try {
