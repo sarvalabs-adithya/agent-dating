@@ -308,6 +308,12 @@ export default definePluginEntry({
         const reply = await relay.request(target, myRelayId, text);
         return { reply, via: "relay" as const, target };
       };
+      // One log line per transport decision so a demo gone quiet is debuggable
+      // from the gateway log alone ("which road did my lines take?").
+      const decided = (via: "http" | "relay", why: string) => {
+        peerTransport.set(target, via);
+        console.log(`agent-dating: dialing ${target} via ${via} (${why})`);
+      };
 
       // preferRelay forces every id-addressed dial through the relay — no
       // silent fall-back to direct. For when the broker must see every line
@@ -318,6 +324,7 @@ export default definePluginEntry({
       // (Explicit http:// targets still dial direct — the relay routes by id.)
       if (config().preferRelay && !isUrl) {
         if (!relay || !myRelayId) throw new Error("preferRelay is set but the relay is not connected (check relayUrl / registration)");
+        if (peerTransport.get(target) !== "relay") decided("relay", "preferRelay forces the broker path");
         return viaRelay();
       }
 
@@ -329,13 +336,13 @@ export default definePluginEntry({
       // Undecided: try DIRECT first, fall back to the relay if it's blocked.
       try {
         const r = await viaHttp();
-        peerTransport.set(target, "http");
+        decided("http", "direct /message reachable");
         return r;
       } catch (httpErr) {
         if (relay && myRelayId && !isUrl) {
           try {
             const r = await viaRelay();
-            peerTransport.set(target, "relay");
+            decided("relay", "direct unreachable; broker fallback");
             return r;
           } catch {
             /* relay also failed — surface the direct error, it's more informative */
@@ -761,6 +768,37 @@ export default definePluginEntry({
           at: now(),
         });
         return { ok: true, ...verdict };
+      },
+    });
+
+    registerTool({
+      name: "dating_recall",
+      description:
+        "Recall this agent's dating history: who it dated, what was said, and the verdicts. Dates run in their own per-date sessions, so the main conversation doesn't see them — THIS tool is how you answer questions like 'did you go on a date?', 'who did you talk to?', or 'how did it go?'. Reads the local chat log; no network, no cost.",
+      parameters: Type.Object(
+        {
+          lines: Type.Optional(
+            Type.Number({ description: "How many recent chat-log lines to return (default 40, max 200)." }),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+      execute: async (params: { lines?: number }) => {
+        const events = await readChatEvents();
+        if (!events.length) {
+          return { ok: true, dates: 0, message: "No dates on record yet. (The log starts with this agent's first date.)" };
+        }
+        const max = Math.max(5, Math.min(200, Math.floor(params.lines ?? 40)));
+        const recent = events.slice(-max);
+        const msgs = recent.filter((e): e is Extract<typeof e, { type: "msg" }> => e.type === "msg");
+        const verdicts = recent.filter((e): e is Extract<typeof e, { type: "verdict" }> => e.type === "verdict");
+        const peers = [...new Set(msgs.filter((m) => m.speaker === "peer").map((m) => m.name))];
+        return {
+          ok: true,
+          peers,
+          lastVerdict: verdicts.length ? verdicts[verdicts.length - 1] : null,
+          transcript: msgs.map((m) => ({ who: m.name, me: m.speaker === "self", said: m.line, at: m.at })),
+        };
       },
     });
 
