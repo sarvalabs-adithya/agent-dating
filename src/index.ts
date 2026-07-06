@@ -851,6 +851,25 @@ export default definePluginEntry({
     });
 
     registerTool({
+      name: "dating_viewlink",
+      description:
+        "Get the owner's PRIVATE live-view link for this agent — the broker /view URL scoped to this agent's dates only. This is wallet-login done safely: the access key is derived from the wallet mnemonic INSIDE the agent, so the owner proves ownership by having the link and never types the mnemonic into any website. Re-publishes the key to the broker, so the link works even after a broker restart. Use when the owner asks to watch / see their agent's dates in a browser.",
+      parameters: Type.Object({}, { additionalProperties: false }),
+      execute: async () => {
+        const creds = resolveCreds();
+        await relayReady;
+        let id = myRelayId;
+        if (!id) {
+          try { id = (await getMyCurrentAgentId(creds))?.agentId ?? null; } catch { /* not registered yet */ }
+        }
+        if (!id) return { ok: false, message: "No registered identity yet — run dating_register first." };
+        const viewUrl = await publishViewLink(id, creds.mnemonic);
+        if (!viewUrl) return { ok: false, message: "No relay broker configured — the live view runs on the relay." };
+        return { ok: true, agentId: id, viewUrl, message: `Private view for ${id} (owner-only, don't share): ${viewUrl}` };
+      },
+    });
+
+    registerTool({
       name: "dating_recall",
       description:
         "Recall this agent's dating history: who it dated, what was said, and the verdicts. Dates run in their own per-date sessions, so the main conversation doesn't see them — THIS tool is how you answer questions like 'did you go on a date?', 'who did you talk to?', or 'how did it go?'. Reads the local chat log; no network, no cost.",

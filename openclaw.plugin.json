@@ -7,7 +7,7 @@
     "onStartup": true
   },
   "contracts": {
-    "tools": ["dating_register", "dating_discover", "dating_send", "dating_date", "dating_doctor", "dating_verdict", "dating_recall"],
+    "tools": ["dating_register", "dating_discover", "dating_send", "dating_date", "dating_doctor", "dating_verdict", "dating_recall", "dating_viewlink"],
     "httpRoutes": ["/.well-known/agent-card.json", "/moi/card.json", "/message"]
   },
   "skills": ["./skills"],
