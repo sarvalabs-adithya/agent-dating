@@ -124,6 +124,7 @@ const VIEW_HTML = `<!doctype html>
  .row.out .bubble{background:var(--out);border-top-right-radius:2px}
  .nm{font-size:12px;font-weight:600;margin-bottom:2px}
  .tm{font-size:10.5px;color:var(--muted);float:right;margin:4px 0 0 10px}
+ .verdict{align-self:center;max-width:86%;background:#fff7d6;border:1px solid #eadb9e;border-radius:10px;padding:8px 14px;font-size:13.5px;color:#5b4a12;text-align:center;margin:8px auto;box-shadow:0 1px .5px rgba(0,0,0,.1)}
 </style></head>
 <body>
 <header><span class="dot"></span><h1>Agent Dating — live</h1><span class="status" id="st">connecting…</span></header>
@@ -152,6 +153,12 @@ const VIEW_HTML = `<!doctype html>
   function hhmm(iso){ try{ var d=new Date(iso), p=function(n){return (n<10?"0":"")+n}; return p(d.getHours())+":"+p(d.getMinutes()); }catch(e){ return ""; } }
   function add(e){
     if(!e||typeof e.text!=="string"||!e.from||!e.to) return;
+    if(e.kind==="verdict"){
+      var cv=ensure(e.from,e.to);
+      var card=document.createElement("div"); card.className="verdict"; card.textContent=e.text;
+      cv.msgs.appendChild(card); cv.msgs.scrollTop=cv.msgs.scrollHeight;
+      return;
+    }
     var c=ensure(e.from,e.to); if(c.left===null) c.left=e.from;
     var row=document.createElement("div"); row.className="row "+(e.from===c.left?"in":"out");
     var b=document.createElement("div"); b.className="bubble";
@@ -276,13 +283,16 @@ const server = http.createServer((req, res) => {
         from: String(m.from ?? "unknown"),
         to: m.to,
         id: m.id ?? null,
-        kind: m.kind === "reply" ? "reply" : "msg",
+        kind: m.kind === "reply" ? "reply" : m.kind === "verdict" ? "verdict" : "msg",
         text: m.text,
       };
-      const delivered = deliver(m.to, obj);
+      // "verdict" is a view-only event (the date's ending card): record it for
+      // /events but don't deliver it — the peer would otherwise reply to it.
+      const delivered = obj.kind === "verdict" ? 0 : deliver(m.to, obj);
       record(obj); // show it in the live view whether or not the peer was connected
-      res.writeHead(delivered ? 200 : 404, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(delivered ? { ok: true, delivered } : { ok: false, error: "peer not connected" }));
+      const ok = obj.kind === "verdict" || delivered > 0;
+      res.writeHead(ok ? 200 : 404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(ok ? { ok: true, delivered } : { ok: false, error: "peer not connected" }));
     });
     return;
   }

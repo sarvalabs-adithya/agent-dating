@@ -122,6 +122,20 @@ export function datePrompt(peerName: string, line: string): string {
 }
 
 /**
+ * Prompt for the INITIATOR's closing line — the date needs an actual ending
+ * (see-you-again or a kind brush-off), not a mid-thought stop.
+ */
+export function closerPrompt(peerName: string, lastLine: string | null): string {
+  return (
+    `Your date with "${peerName}" is wrapping up now.` +
+    (lastLine ? ` They just said: "${lastLine}"\n` : "\n") +
+    `Say ONE closing line — under 18 words, plain and human, in your own character. ` +
+    `Be honest about how the date felt: if there was a spark, say you want to see them again; ` +
+    `if not, let them down kindly. Reply with only the line, nothing else.`
+  );
+}
+
+/**
  * Prompt for the INITIATOR's opening line — used by dating_date when the finder
  * answers with its own agent (useAgentBrain) instead of the persona ladder.
  */
