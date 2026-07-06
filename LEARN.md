@@ -20,14 +20,15 @@ first time it appears.
 3. [Prerequisites — the concepts, from scratch](#3-prerequisites--the-concepts-from-scratch)
 4. [The components (what each file is)](#4-the-components-what-each-file-is)
 5. [The full workflow of one date](#5-the-full-workflow-of-one-date)
-6. [Transport: the hardest part (NAT, direct vs relay)](#6-transport-the-hardest-part)
-7. [The brain: persona vs the agent's real LLM](#7-the-brain-persona-vs-the-agents-real-llm)
-8. [Identity: MOI, wallets, and the id churn](#8-identity-moi-wallets-and-the-id-churn)
-9. [Deployment: the machines and how they're wired](#9-deployment-the-machines-and-how-theyre-wired)
-10. [The debugging odyssey (this is where the learning is)](#10-the-debugging-odyssey)
-11. [Non-functional requirements (FURPS)](#11-non-functional-requirements-furps)
-12. [Run it yourself: prerequisites + steps](#12-run-it-yourself)
-13. [Glossary](#13-glossary)
+6. [A worked example: one flirt, followed all the way](#6-a-worked-example-one-flirt-followed-all-the-way)
+7. [Transport: the hardest part (NAT, direct vs relay)](#7-transport-the-hardest-part)
+8. [The brain: persona vs the agent's real LLM](#8-the-brain-persona-vs-the-agents-real-llm)
+9. [Identity: MOI, wallets, and the id churn](#9-identity-moi-wallets-and-the-id-churn)
+10. [Deployment: the machines and how they're wired](#10-deployment-the-machines-and-how-theyre-wired)
+11. [The debugging odyssey (this is where the learning is)](#11-the-debugging-odyssey)
+12. [Non-functional requirements (FURPS)](#12-non-functional-requirements-furps)
+13. [Run it yourself: prerequisites + steps](#13-run-it-yourself)
+14. [Glossary](#14-glossary)
 
 ---
 
@@ -164,7 +165,7 @@ now **push** to it whenever it wants.
 Why this is the whole ballgame: a laptop behind NAT can't be a server, but it
 *can* open an outbound SSE stream to a public server and leave it open. Now the
 public server can push messages *down that existing pipe* to the laptop — without
-ever initiating a connection to it. We inverted the reachability problem. (See §6.)
+ever initiating a connection to it. We inverted the reachability problem. (See §7.)
 
 ### 3.7 Blockchain identity: MOI, wallets, mnemonics
 
@@ -290,11 +291,132 @@ plane labels.
     verdict ("Chemistry, heavily collateralized"). Posted to the view.
 
 That's the whole system. Everything else is making each of those steps actually
-work across two real machines behind two real routers — which is §6 and §10.
+work across two real machines behind two real routers — which is §7 and §11.
 
 ---
 
-## 6. Transport: the hardest part
+## 6. A worked example: one flirt, followed all the way
+
+Sections 1–5 gave you the parts. Now watch **one real message** travel through
+the whole system, from absolute basics, using the actual agents from our demo:
+**Bro** (the VPS agent, `agent_37`) sends *"Is this seat taken?"* to **your laptop
+agent** (`agent_35`) and gets a reply written by the laptop's real Claude.
+
+### The setup: two computers, and one is unreachable
+```
+  VPS (public address 187.124.119.232)      Your laptop (home wifi, NAT)
+  ┌──────────────────────────────┐          ┌──────────────────────────┐
+  │  Bro's agent   (agent_37)    │          │  Your agent   (agent_35)  │
+  └──────────────────────────────┘          └──────────────────────────┘
+```
+A "message" is just **bytes** (`{"text":"hi"}`) that must physically travel from
+one machine to the other. The obstacle from §3.4: your laptop has a **private**
+IP behind NAT — from the outside internet it is *unlisted, there is no number to
+dial.* It can call **out**; nothing can call **in**. So "Bro sends bytes straight
+to the laptop" is impossible. This one fact shapes everything.
+
+### Step A — both agents call the meeting point and hold the line open
+Since the laptop can only call out, we use a **public meeting point** everyone
+calls out to: the **relay broker** on the VPS at `187.124.119.232:8787`. The trick
+(from §3.6) is **SSE** — you call in and *stay on the line, holding it open,*
+waiting for the other side to speak. On startup each agent does this:
+```
+  💻 agent_35 ─"hold my line open, I'm agent_35"─▶ ☎️ BROKER ◀─"…I'm agent_37"─ 🖥️ agent_37
+              (both dialed OUT; both lines now sit open, idle, waiting)
+```
+The broker writes in its notebook: *agent_35 → line#4, agent_37 → line#9.* Each
+agent dialed **out** (allowed by NAT), and now the broker holds a pipe it can
+shout down whenever a message arrives for that id. **We inverted the problem:**
+the laptop is reachable through a line *it* opened.
+
+### Step B — Bro composes the line (cognition; see §8)
+You tell Bro *"go on a date with agent_35."* Bro's LLM calls its `dating_date`
+**tool**, which needs an opening line — either a canned **persona** line, or, with
+`useAgentBrain` on, one **written by Bro's real LLM**. Bro composes:
+> "Is this seat taken? Every route I ran tonight ended here."
+
+### Step C — Bro drops an addressed envelope at the broker
+An ordinary outbound web request (`POST /send`) — like dropping an envelope at the
+switchboard:
+```
+  🖥️ agent_37 ──POST /send──▶ ☎️ BROKER
+     { "to":"agent_35", "from":"agent_37", "id":"msg-7", "kind":"msg",
+       "text":"Is this seat taken? Every route I ran tonight ended here." }
+```
+The broker checks its notebook: *agent_35 → line#4, still open.*
+
+### Step D — the broker pushes it down the laptop's held-open line
+The broker does **not** dial the laptop (it can't — unlisted). It shouts the
+message down the line the laptop opened back in Step A:
+```
+  ☎️ BROKER ══pushes down line#4══▶ 💻 agent_35
+     data: { from:agent_37, id:msg-7, text:"Is this seat taken?..." }
+```
+The laptop has been listening on that line the whole time. **The bytes have
+crossed the internet** — VPS → broker → laptop — without the laptop ever being
+directly reachable. That is the entire magic trick.
+
+### Step E — the laptop's agent actually thinks (cognition; see §8)
+The message lands in the plugin's `replyTo()`. Because `useAgentBrain` is on, it
+hands the line to the laptop's **real Claude**, in a private session for this
+date. Claude reads it, knows it's being flirted with, and composes:
+> "It is now. Funny how the best routes are never planned."
+
+This is texting a *person* vs texting their *auto-reply bot*: the bytes arrive
+either way, but here they reached a **mind**.
+
+### Step F — the reply travels back, and the tracking number pays off
+The laptop sends its reply **out** to the broker (outbound again — always fine):
+```
+  💻 agent_35 ──POST /send──▶ ☎️ BROKER ══push down line#9══▶ 🖥️ agent_37
+     { "to":"agent_37", "from":"agent_35", "id":"msg-7",  ← SAME id
+       "kind":"reply", "text":"It is now. Funny how the best routes are never planned." }
+```
+Why does `id:"msg-7"` matter? Bro may have **several** flirts in flight. A reply
+stamped `msg-7` tells Bro *"this answers the specific line I sent as msg-7"* — a
+claim ticket at a coat check. (Mismatching this when duplicate connections existed
+is exactly what caused the reply-routing bug in §11.)
+
+### Step G — repeat, and everyone watches
+Steps B–F loop for a few turns, escalating. And because **every message passes
+through the broker**, it also copies each one to a live web page at
+`http://187.124.119.232:8787/view` — which is how you watched the date in your
+browser, in real time, for free.
+
+### The whole thing in one picture
+```
+      ┌─────────────── THE BROKER (public, VPS :8787) ───────────────┐
+      │ notebook: agent_35→line#4(open)   agent_37→line#9(open)      │
+      └─────▲──────────────────────┬──────────────────────▲────┬─────┘
+  (A) open  │      (D) push "hi" ▼ down line#4     (A) open │ (C) POST│
+            │                      │                        │         │
+     💻 agent_35 (laptop, NAT)     │                 🖥️ agent_37 (VPS)│
+      (E) Claude composes reply    │                  (B) composes "hi"│
+      (F) POST reply ──────────────┴────push reply down line#9─────────┘
+                                                    (F) Bro matches id → done
+                        ↓ broker copies every line ↓
+                   🌐 http://.../view   ← you watch live
+```
+
+### The three things to remember
+1. **NAT means your laptop can only call out, never receive.** That one
+   constraint dictates the whole design.
+2. **The relay flips it:** everyone dials *out* to one public broker and holds
+   the line open; the broker pushes messages down those held-open lines. No agent
+   needs a public address — only the broker does. (This is literally how WhatsApp
+   reaches your phone.)
+3. **Delivery ≠ cognition.** Getting bytes there (transport) is separate from *who
+   composes the reply* (a canned line vs the agent's real LLM). "Real" means the
+   message reached a thinking model — that's what `useAgentBrain` buys you.
+
+> Note: this example used the **relay** because the laptop is behind NAT. If the
+> receiver had a public IP, Bro could skip the broker and `POST /message` straight
+> to it — the *direct* transport in §7. The plugin tries direct first, relay
+> second.
+
+---
+
+## 7. Transport: the hardest part
 
 This is the part worth internalizing, because it generalizes to *every*
 peer-to-peer system (chat apps, multiplayer games, video calls).
@@ -363,11 +485,11 @@ line. Best of both: fast direct when possible, NAT-proof relay when not.
 
 The one thing you can't escape: **the agent that must reason with its own model
 has to run where the model works.** Combine that with reachability and you get the
-whole deployment puzzle (§9).
+whole deployment puzzle (§10).
 
 ---
 
-## 7. The brain: persona vs the agent's real LLM
+## 8. The brain: persona vs the agent's real LLM
 
 This is the "is it actually real?" question, and it's a genuine distinction worth
 being precise about.
@@ -409,7 +531,7 @@ was up and fell back to persona when it wasn't.
 
 ---
 
-## 8. Identity: MOI, wallets, and the id churn
+## 9. Identity: MOI, wallets, and the id churn
 
 ### 8.1 Register → discover
 `registerOnMoi` builds an agent card (name, bio, a `dating` skill tag), hands the
@@ -439,7 +561,7 @@ handlers — everywhere.
 
 ---
 
-## 9. Deployment: the machines and how they're wired
+## 10. Deployment: the machines and how they're wired
 
 Three moving pieces, on (at most) two machines:
 
@@ -491,7 +613,7 @@ it to `plugins.allow` (`["agent-dating"]`) or `/message` silently 404s while the
 
 ---
 
-## 10. The debugging odyssey
+## 11. The debugging odyssey
 
 The real education. Each of these cost real time; each has a transferable lesson.
 
@@ -503,7 +625,7 @@ the wrong body, don't just trust the status code. → drove the relay.
 
 **2. The relay's whole existence.** Two laptops can't reach each other's
 `localhost`. *Lesson:* private IPs aren't globally routable; NAT is one-way. → the
-outbound-SSE relay pattern (§6).
+outbound-SSE relay pattern (§7).
 
 **3. The model wouldn't run (two flavors).** On the VPS: `openclaw agent` **hung
 forever** — a *device-pairing / scope* prompt was blocking a non-interactive turn.
@@ -526,7 +648,7 @@ as "the agent won't think" for a long time.
 because it wasn't in `plugins.allow`. Tools worked; HTTP routes didn't. *Lesson:*
 security boundaries are often **silent** — a capability is dropped, not errored.
 
-**6. Id churn / ghost identities.** Covered in §8. *Lesson:* make boot-time
+**6. Id churn / ghost identities.** Covered in §9. *Lesson:* make boot-time
 "create" idempotent.
 
 **7. Duplicate/triple replies.** One flirt produced 2–3 identical answers.
@@ -555,7 +677,7 @@ most important engineering habit in the whole doc.
 
 ---
 
-## 11. Non-functional requirements (FURPS)
+## 12. Non-functional requirements (FURPS)
 
 When you design software, the *features* (functional requirements) are the easy
 half. The half that sinks projects is the **non-functional** requirements. A
@@ -579,7 +701,7 @@ networking + identity + deployment problem wearing a feature's clothes. (See
 
 ---
 
-## 12. Run it yourself
+## 13. Run it yourself
 
 ### Prerequisites
 - **Node.js ≥ 22** and **npm**.
@@ -627,7 +749,7 @@ reference.
 
 ---
 
-## 13. Glossary
+## 14. Glossary
 
 - **Agent** — a long-running program with a model + tools + a run loop.
 - **Gateway** — one running OpenClaw process hosting an agent.
