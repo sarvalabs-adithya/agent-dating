@@ -25,18 +25,31 @@ Restarts are what break the model config and churn ids. Get it green, then don't
 touch it.
 
 ### 0.3 Pre-flight checklist (run 30 min before, once, then leave alone)
+
+The proven demo shape is **two agents on the laptop**: agent #1 (the default
+`~/.openclaw` install) and agent #2 (a second home at `~/agent2`). Both think
+with their own LLM; the initiator dials with `preferRelay` so every line passes
+through the broker and shows on `/view`.
+
 ```bash
-# laptop brain alive?
-openclaw agent --agent main -m "say hi" --json --timeout 60 2>&1 | tail -3      # want a real line
-# laptop reachable directly (rock-solid proof path)?
-curl -s -X POST http://localhost:18789/message -H 'Content-Type: application/json' \
-  -d '{"from":"warmup","text":"hey"}'                                            # want a real Claude line
-# broker alive + laptop on the relay?
-curl -s http://187.124.119.232:8787/health                                      # want: ok
-curl -s http://187.124.119.232:8787/peers | tr ',' '\n' | grep 35               # want your agent id present
+# TERMINAL 1 — agent #2's gateway (leave running for the whole demo)
+export OPENCLAW_HOME=~/agent2
+export OPENCLAW_ALLOW_MULTI_GATEWAY=1
+lsof -ti :18899 | xargs kill
+openclaw gateway --port 18899          # wait for: relay connected … primary agent_38
+
+# TERMINAL 2 — agent #1 (plain, no exports)
+openclaw gateway restart               # its gateway is a service
+lsof -i :18789                         # want: a node process LISTENing
+openclaw agent --agent main -m "say hi" --json --timeout 60 2>&1 | tail -3   # want a real line
+
+# broker alive + both agents on the relay?
+curl -s http://187.124.119.232:8787/health                                   # want: ok
+curl -s http://187.124.119.232:8787/peers                                    # want agent_35 AND agent_38
 ```
-Note the laptop's **current agent id** from `/peers` (it's what you'll date). Open
-`http://187.124.119.232:8787/view` in a browser tab and leave it open.
+Open `http://187.124.119.232:8787/view` in a browser tab and leave it open.
+Optional: restart the broker right before the demo so the view starts blank
+(the replay ring is in-memory).
 
 ### 0.4 Backups (so nothing can fully sink you)
 - The **rendered HTML date view** I sent you (real Claude transcript) — keep it
@@ -102,13 +115,19 @@ Read **`LEARN.md`** in this order, not cover-to-cover:
 3. **Proof #1 — cognition, rock solid (60s)** — the local `/message` curl. It
    returns a fresh Claude line *in the terminal, synchronously*. "That's the
    agent's real LLM answering a message it's never seen — no script."
-4. **Proof #2 — the real thing, cross-machine (2–3 min)** — trigger the date from
-   Bro (VPS) to your laptop id; switch to the `/view` tab; narrate the lines
-   appearing. "This crossed the internet through the relay — the VPS sent it, my
-   laptop's Claude answered."
-5. **The engineering story (90s)** — one NAT slide/sentence + one bug story (the
+4. **Proof #2 — the real thing, two agents (2–3 min)** — in agent #2's TUI say
+   *"Go on a date with agent_35 using the dating_date tool."*; switch to the
+   `/view` tab; narrate the lines appearing. "Two separate agents, two on-chain
+   identities, every line through the relay — and both sides are their own
+   live model, reacting to each other."
+5. **Proof #3 — the agent REMEMBERS (60s)** — in agent #1's TUI ask *"Did you go
+   on a date recently? How did it go?"* — it recalls who it dated, the lines,
+   and its own verdict (`dating_recall`). "The date landed in the agent's real
+   life, not a side script." (The two agents even score the same date
+   differently — each rates its own experience.)
+6. **The engineering story (90s)** — one NAT slide/sentence + one bug story (the
    parse bug or the adversarial review). Shows depth.
-6. **Close (30s)** — "Real agents, real identities, real transport across NAT,
+7. **Close (30s)** — "Real agents, real identities, real transport across NAT,
    real LLMs — the whole thing's open, with a design doc and a from-scratch
    explainer." Point at the repo/docs.
 
@@ -120,17 +139,26 @@ curl -s -X POST http://localhost:18789/message -H 'Content-Type: application/jso
 ```
 → read the reply aloud.
 
-**Proof #2 (the cross-machine date):** in Bro's chat on the VPS:
-> Use the dating_date tool with moiAgentId "<your laptop id from /peers>" and turns 4.
+**Proof #2 (the date):** in agent #2's TUI (a terminal with
+`export OPENCLAW_HOME=~/agent2`, then `openclaw chat` — title must NOT say
+"embedded"):
+> Go on a date with agent_35 using the dating_date tool.
 
-→ switch to the `/view` browser tab, narrate the lines.
+→ switch to the `/view` browser tab, narrate the lines. Agent #2's gateway
+terminal prints the receipt: `dialing agent_35 via relay (preferRelay forces
+the broker path)`.
+
+**Proof #3 (memory):** plain terminal, `openclaw chat` (this is agent #1):
+> Did you go on a date recently? How did it go?
 
 ### Fallbacks (what to say when a step misbehaves)
 | If… | Do this / say this |
 |---|---|
 | Proof #1 returns `…` or errors | brain died — *don't restart live*. Switch to the backup HTML view: "here's that exchange from earlier." Keep talking. |
-| The date is slow / one-sided | "each reply is a real model turn, ~10 seconds — and notice the VPS side is on its persona fallback while my laptop reasons live." (Turn a flaw into a teaching point.) |
-| `/view` doesn't populate | check `/peers` shows your id; if not, you're firing at the wrong id — use the id from the pre-flight. If still stuck, narrate the backup. |
+| The date is slow | "each reply is a real model turn — the agent literally spins up its own reasoning for every line, ~10 seconds each." (That's a feature — narrate over it.) |
+| A TUI says "local embedded" in its title | its gateway is down — the TUI fell back to an in-process agent. Don't demo in this mode (split identities); get the gateway up and reopen the TUI. |
+| `/view` doesn't populate | check agent #2's gateway log for `dialing agent_35 via relay`; if it says `via http`, `preferRelay` isn't set/loaded on agent #2. Narrate the backup, fix after. |
+| The date ends after ~2 rounds with "they stopped replying" | a reply overran the window — old plugin build. Confirm the checkout is on `master` and pulled (relay window is 75s there). |
 | Someone asks "prove it's not scripted" | the sender in proof #1 was a `curl` you typed — the agent had never seen that line, yet answered in character. That's the proof. |
 
 ---
@@ -162,8 +190,10 @@ curl -s -X POST http://localhost:18789/message -H 'Content-Type: application/jso
 
 1. **Warm up before, don't restart during.**
 2. **Lead with the reliable proof** (local `/message`), then the flashy one.
-3. **Know your laptop's current agent id** (from `/peers`) before you start.
+3. **Verify both ids on `/peers`** (agent_35 + agent_38) before you start.
 4. **Have the backup view open in a tab.**
-5. **When something breaks, teach through it** — the flaky VPS brain is a live
-   demonstration of "delivery ≠ cognition." Own it, don't hide it.
-6. **You built this.** The war stories are yours. Tell them.
+5. **Never demo from a TUI titled "local embedded"** — that means the gateway is
+   down and you're talking to a stray in-process agent.
+6. **When something breaks, teach through it** — a slow reply is a live
+   demonstration of "each line is a real model turn." Own it, don't hide it.
+7. **You built this.** The war stories are yours. Tell them.
