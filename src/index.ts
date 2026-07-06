@@ -85,7 +85,7 @@ const DatingConfigSchema = Type.Object(
     preferRelay: Type.Optional(
       Type.Boolean({
         description:
-          "Try the relay BEFORE direct HTTP when dialing peers (default false: direct first). Set it when you want every line to pass through the broker — e.g. so its live /view shows a date between two agents that could otherwise reach each other directly.",
+          "Force every id-addressed dial through the relay (default false: direct HTTP first, relay as fallback). Set it when every line must pass through the broker — e.g. so its live /view shows a date between two agents that could otherwise reach each other directly. No silent fallback: if the relay is down, the dial fails loudly.",
       }),
     ),
     displayName: Type.Optional(
@@ -309,26 +309,22 @@ export default definePluginEntry({
         return { reply, via: "relay" as const, target };
       };
 
+      // preferRelay forces every id-addressed dial through the relay — no
+      // silent fall-back to direct. For when the broker must see every line
+      // (its /view is the demo screen) even though the peer is directly
+      // reachable, e.g. two agents on the same laptop. A relay failure then
+      // surfaces as an error instead of quietly bypassing the view. Checked
+      // before the cache so a stale earlier "http" decision can't override it.
+      // (Explicit http:// targets still dial direct — the relay routes by id.)
+      if (config().preferRelay && !isUrl) {
+        if (!relay || !myRelayId) throw new Error("preferRelay is set but the relay is not connected (check relayUrl / registration)");
+        return viaRelay();
+      }
+
       // Honor a cached decision from an earlier turn with this peer.
       const cached = peerTransport.get(target);
       if (cached === "http") return viaHttp();
       if (cached === "relay") return viaRelay();
-
-      // preferRelay flips the order: relay first, direct as the fallback. For
-      // when every line should pass through the broker (its /view is the demo
-      // screen) even though the peer is directly reachable — e.g. two agents
-      // on the same laptop.
-      if (config().preferRelay && relay && myRelayId && !isUrl) {
-        try {
-          const r = await viaRelay();
-          peerTransport.set(target, "relay");
-          return r;
-        } catch {
-          const r = await viaHttp();
-          peerTransport.set(target, "http");
-          return r;
-        }
-      }
 
       // Undecided: try DIRECT first, fall back to the relay if it's blocked.
       try {

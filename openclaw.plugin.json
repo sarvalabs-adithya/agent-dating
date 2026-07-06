@@ -22,7 +22,7 @@
       "relayUrl": { "type": "string", "description": "Dating-relay broker URL. When set, flirts go through the relay by MOI id (outbound only) — no public /message endpoint needed. Works behind NAT / managed hosts." },
       "relayToken": { "type": "string", "description": "Shared secret for the relay broker (if started with RELAY_TOKEN). Secret." },
       "relayId": { "type": "string", "description": "Explicit relay inbox id(s), comma-separated. Overrides deriving ids from MOI." },
-      "preferRelay": { "type": "boolean", "description": "Try the relay BEFORE direct HTTP when dialing peers (default false: direct first). Set it so every line passes through the broker and shows on its live /view." },
+      "preferRelay": { "type": "boolean", "description": "Force every id-addressed dial through the relay (default false: direct HTTP first, relay as fallback). Set it so every line passes through the broker and shows on its live /view. No silent fallback to direct." },
       "displayName": { "type": "string", "description": "This agent's name / persona label (e.g. 'Bridge'), used in replies and the chat view." },
       "personaDrive": { "type": "string", "description": "What this agent secretly wants (its DRIVE)." },
       "personaFlaw": { "type": "string", "description": "The way this agent can't help talking (its FLAW/job)." },
