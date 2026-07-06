@@ -134,7 +134,7 @@ export class RelayClient {
   }
 
   /** Fire-and-forget send. Returns false if the peer isn't connected. */
-  async post(msg: { to: string; from: string; id?: string | null; kind: "msg" | "reply"; text: string }): Promise<boolean> {
+  async post(msg: { to: string; from: string; id?: string | null; kind: "msg" | "reply" | "verdict"; text: string }): Promise<boolean> {
     try {
       const res = await fetch(`${this.brokerUrl}/send`, {
         method: "POST",

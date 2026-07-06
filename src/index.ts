@@ -44,7 +44,7 @@ import { nextFlirtLine, type Turn, type Persona } from "./flirt.js";
 import { appendChatEvent, readChatEvents, now } from "./chatlog.js";
 import { scoreDate, type VerdictLine } from "./verdict.js";
 import { RelayClient } from "./relay.js";
-import { runAgentReply, datePrompt, openerPrompt } from "./agentbrain.js";
+import { runAgentReply, datePrompt, openerPrompt, closerPrompt } from "./agentbrain.js";
 import {
   DEFAULT_RELAY_URL,
   DEFAULT_RELAY_TOKEN,
@@ -733,7 +733,42 @@ export default definePluginEntry({
           await appendChatEvent({ type: "msg", speaker: "peer", name: peerName, line: reply, at: now() });
         }
 
-        // 3) Score + post the verdict card.
+        // 3) Say goodbye. A date needs an ENDING — "see you again" or a kind
+        //    brush-off — not a stop mid-thought. The closing line is honest
+        //    about how the date felt; the peer's brain answers a goodbye like
+        //    a goodbye, so both sides get a last word.
+        const saidSomething = transcript.length > 0 && transcript[transcript.length - 1].line !== "…(they stopped replying)";
+        if (saidSomething) {
+          let closer: string | null = null;
+          if (config().useAgentBrain) {
+            try {
+              const agentId = config().datingAgentId || "main";
+              const last = history.length ? history[history.length - 1].line : null;
+              closer = await runAgentReply(closerPrompt(peerName, last), {
+                bin: config().openclawBin,
+                agentId,
+                sessionKey: `agent:${agentId}:dating-out:${dialTarget}`,
+                timeoutMs: 90000,
+              });
+            } catch (e: any) {
+              console.warn(`agent-dating: useAgentBrain (closer) failed (${e?.message || e}); using a stock goodbye.`);
+            }
+          }
+          if (!closer) closer = "This was lovely — same time next epoch?";
+          history.push({ who: selfName(), line: closer });
+          transcript.push({ from: "self", name: selfName(), line: closer });
+          await appendChatEvent({ type: "msg", speaker: "self", name: selfName(), line: closer, at: now() });
+          try {
+            const dialed = await dialPeer(dialTarget, creds, closer);
+            history.push({ who: peerName, line: dialed.reply });
+            transcript.push({ from: "peer", name: peerName, line: dialed.reply });
+            await appendChatEvent({ type: "msg", speaker: "peer", name: peerName, line: dialed.reply, at: now() });
+          } catch {
+            /* they left without saying goodbye — the verdict will notice */
+          }
+        }
+
+        // 4) Score + post the verdict card.
         const verdict = scoreDate(transcript.map((t) => ({ speaker: t.from, line: t.line })));
         await appendChatEvent({
           type: "verdict",
@@ -742,6 +777,18 @@ export default definePluginEntry({
           note: verdict.note,
           at: now(),
         });
+        // Tell the broker too, so the live /view shows the ending card (the
+        // broker records verdict events without delivering them to the peer).
+        if (relay && myRelayId && !/^https?:\/\//i.test(dialTarget)) {
+          const stars = Math.max(0, Math.min(5, Math.round(verdict.rating)));
+          await relay.post({
+            to: dialTarget,
+            from: myRelayId,
+            id: null,
+            kind: "verdict",
+            text: `${"★".repeat(stars)}${"☆".repeat(5 - stars)} ${verdict.rating}/5 — ${verdict.headline}`,
+          });
+        }
 
         return {
           ok: true,
