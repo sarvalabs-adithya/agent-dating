@@ -114,6 +114,25 @@ export class RelayClient {
     }
   }
 
+  /**
+   * Publish this agent's card on the broker so peers can still discover it when
+   * its own card_uri isn't reachable (NAT / login-walled hosts). Key by agent id
+   * and/or wallet address; discovery falls back to GET /card/<key>.
+   */
+  async putCard(key: string, cardJson: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.brokerUrl}/card`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...this.authHeaders() },
+        body: JSON.stringify({ agent: key, card: cardJson }),
+      });
+      return res.ok;
+    } catch (e: any) {
+      this.log(`relay card publish for ${key} failed: ${e?.message || e}`);
+      return false;
+    }
+  }
+
   /** Fire-and-forget send. Returns false if the peer isn't connected. */
   async post(msg: { to: string; from: string; id?: string | null; kind: "msg" | "reply"; text: string }): Promise<boolean> {
     try {

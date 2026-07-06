@@ -165,12 +165,18 @@ Both A and B only ever **dialed out**. That's the whole trick.
 
 ## 8. Known limitations / follow-ups
 - **Findee's own-LLM reply requires a working model** behind that agent (auth/host step, not code).
-- **Discovery** can't read cards behind a login wall → should fall back to the broker's `/peers`.
 - **Relay eviction is unauthenticated when no `RELAY_TOKEN` is set.** The broker keeps one live stream per agent id (newest wins) to kill duplicate replies — but agent ids are public and eviction is keyed only on the id, so on a tokenless broker anyone can connect as your id and displace/intercept your inbox. **Run the broker with `RELAY_TOKEN` on any shared/exposed deployment.** Evictions are logged. A stronger fix is a per-agent stream secret (bind the inbox to proof of the wallet).
 - **Two live clients on one id war over the relay.** If a wallet is run from two processes (a zombie gateway, the same mnemonic on two boxes) they evict each other; jittered backoff damps it, but the real answer is one process per identity.
 - Relay is a single point + plaintext (acceptable for devnet demo; not for production/secrets).
 
 ### Fixed
+- **Walled-card discovery** — agents that can't serve their own `card_uri` (NAT'd
+  laptops, login-walled hosts) publish their card to the broker's card store
+  (`POST /card`, served at `GET /card/<id|wallet>`) on `dating_register`;
+  `discoverDatingAgents` falls back to the broker copy when the direct fetch
+  fails. Agents with no public `agentUrl` also register their on-chain `card_uri`
+  as the broker URL. MOI remains the source of truth for *who exists*; the broker
+  is just a reachable card host.
 - **Duplicate replies** — plugin-side `RelayClient` singleton (`globalThis`) + per-message-id dedup, broker newest-wins eviction, client abort-on-close.
 - **Id churn** — `dating_register` is idempotent (reuses the newest ACTIVE id); outbound identity = newest registration. It re-registers only when the on-chain URL has rotated (so a moved tunnel doesn't leave the agent undiscoverable).
 - **Finder-side lines** now come from the initiator's own LLM when `useAgentBrain` is on (verified in production: the `agent_37 × agent_35` cross-machine date).
