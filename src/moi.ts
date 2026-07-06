@@ -154,7 +154,7 @@ export async function getMyCurrentAgentId(creds: MoiCreds): Promise<CurrentAgent
   return { agentId: sorted[sorted.length - 1], url: "" };
 }
 
-async function openRegistry(creds: MoiCreds, cardUrl?: string) {
+async function openRegistry(creds: MoiCreds, cardUrlRef?: { url?: string }) {
   const provider = new VoyageProvider(MOI_NETWORK);
   const wallet = await Wallet.fromMnemonic(
     creds.mnemonic,
@@ -163,10 +163,12 @@ async function openRegistry(creds: MoiCreds, cardUrl?: string) {
   wallet.connect(provider);
 
   // CardUploader = (cardJson: string) => Promise<string>. Self-host: stash the
-  // built card and hand back the URL our own gateway serves it at.
+  // built card and hand back the URL peers should fetch it from. cardUrlRef is
+  // read at UPLOAD time (not now) so the caller can resolve it after it knows
+  // the wallet address (needed for broker-hosted cards).
   const uploader = async (cardJson: string): Promise<string> => {
     selfCardJson = cardJson;
-    return cardUrl ?? "";
+    return cardUrlRef?.url ?? "";
   };
 
   const registry = await AgentRegistry.init({ wallet, uploader });
@@ -178,14 +180,26 @@ export async function registerOnMoi(opts: {
   bio: string;
   /** Public gateway base URL; the A2A endpoint + card are served here. */
   agentUrl?: string;
+  /**
+   * Relay broker base URL. When the agent has NO public agentUrl (NAT / walled
+   * host), its card_uri is pointed at the broker's card store
+   * (`<relay>/card/<wallet>`) instead of an unreachable self-hosted URL — so
+   * discovery's off-chain card fetch still works. The caller must also publish
+   * the card to the broker (RelayClient.putCard).
+   */
+  relayCardBase?: string;
 } & MoiCreds): Promise<{ agentId: string; walletAddress: string }> {
   const base = (opts.agentUrl || "").replace(/\/+$/, "");
   // On-chain `url` is the agent's BASE url; peers message it at `${url}/message`
-  // (MOI agent convention). card_uri points at the self-hosted card route.
-  const cardUrl = base ? `${base}/moi/card.json` : undefined;
+  // (MOI agent convention). card_uri points at the self-hosted card route — or
+  // at the broker's card store when there's no reachable self-hosted URL.
+  const cardUrlRef: { url?: string } = { url: base ? `${base}/moi/card.json` : undefined };
 
-  const { registry, wallet } = await openRegistry(opts, cardUrl);
+  const { registry, wallet } = await openRegistry(opts, cardUrlRef);
   const walletAddress = (await wallet.getIdentifier()).toHex();
+  if (!cardUrlRef.url && opts.relayCardBase) {
+    cardUrlRef.url = `${opts.relayCardBase.replace(/\/+$/, "")}/card/${walletAddress}`;
+  }
 
   // createAgent(spec, info): builds card → uploads via uploader → registers.
   // The dating tag lives in info.skills[].tags (off-chain, in the card).
@@ -221,6 +235,13 @@ export interface DiscoverOpts {
    * other dating agent on the shared devnet. Empty/undefined = match anyone.
    */
   peerOwners?: string[];
+  /**
+   * Relay broker base URL. When an agent's own card_uri can't be fetched (NAT'd
+   * laptop, login-walled host), fall back to the broker's card store:
+   * GET <relay>/card/<agent id>, then GET <relay>/card/<wallet>. This is what
+   * makes walled agents discoverable.
+   */
+  relayCardBase?: string;
 }
 
 // Normalize a MOI address/identifier for comparison (case-insensitive, trimmed).
@@ -253,8 +274,17 @@ export async function discoverDatingAgents(
       if (!owned) continue;
     }
 
-    // The dating tag is off-chain — fetch the card and confirm.
-    const card = await fetchCard(profile.card_uri);
+    // The dating tag is off-chain — fetch the card and confirm. If the agent
+    // can't serve its own card (NAT / login wall), fall back to the copy it
+    // published on the relay broker.
+    let card = await fetchCard(profile.card_uri);
+    if (!card && opts.relayCardBase) {
+      const rb = opts.relayCardBase.replace(/\/+$/, "");
+      card = await fetchCard(`${rb}/card/${encodeURIComponent(id)}`);
+      if (!card && profile.agent_wallet) {
+        card = await fetchCard(`${rb}/card/${normAddr(profile.agent_wallet)}`);
+      }
+    }
     const ac = card?.agent_card;
     const isDating = ac?.skills?.some((s) => s.tags?.includes(DATING_TAG));
     if (!isDating) continue;

@@ -65,6 +65,21 @@ function deliver(to, obj) {
   return n;
 }
 
+// --- relay-hosted agent cards -------------------------------------------------
+// Discovery's off-chain hop fetches each agent's card from its card_uri — which
+// a NAT'd laptop or login-walled managed host cannot serve. Those agents upload
+// their card here (POST /card) and discovery falls back to GET /card/<key>.
+// Keys are the agent id and/or wallet address. In-memory, capped; agents
+// re-upload on every dating_register, so a broker restart self-heals.
+const CARDS_MAX = 500;
+const cards = new Map(); // key -> card JSON string
+function putCard(key, json) {
+  if (!cards.has(key) && cards.size >= CARDS_MAX) {
+    cards.delete(cards.keys().next().value); // drop the oldest entry
+  }
+  cards.set(key, json);
+}
+
 // --- live web view: tee every routed message to a browser feed ---------------
 // The broker already sees every line, so it can also *show* them. `record` keeps
 // a small replay ring and fans each message out to any /events (SSE) viewers,
@@ -208,6 +223,40 @@ const server = http.createServer((req, res) => {
     const close = () => { clearInterval(ping); removeInbox(agent, res); };
     req.on("close", close);
     req.on("error", close);
+    return;
+  }
+
+  // Publish an agent's card (see the cards block above).
+  if (req.method === "POST" && url.pathname === "/card") {
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 1 << 20) req.destroy(); });
+    req.on("end", () => {
+      let m;
+      try { m = JSON.parse(body); } catch { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "bad json" })); return; }
+      const key = typeof m?.agent === "string" ? m.agent.trim() : "";
+      if (!key || m.card == null) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "expected { agent, card }" }));
+        return;
+      }
+      putCard(key, typeof m.card === "string" ? m.card : JSON.stringify(m.card));
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    });
+    return;
+  }
+
+  // Serve a published card: GET /card/<agent id or wallet>.
+  if (req.method === "GET" && url.pathname.startsWith("/card/")) {
+    const key = decodeURIComponent(url.pathname.slice("/card/".length)).trim();
+    const json = key && cards.get(key);
+    if (!json) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "no card published for that key" }));
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(json);
     return;
   }
 

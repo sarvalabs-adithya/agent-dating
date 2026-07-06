@@ -465,6 +465,10 @@ export default definePluginEntry({
             await relayReady;
             attachInbox(existing.agentId);
             myRelayId = existing.agentId; // outgoing flirts identify as the advertised id
+            // Publish the card on the broker too, so peers whose direct fetch of
+            // our card_uri fails (we're NAT'd/walled) can still discover us.
+            const reusedCard = getSelfCardJson();
+            if (relay && reusedCard) await relay.putCard(existing.agentId, reusedCard);
             return {
               ok: true,
               agentId: existing.agentId,
@@ -484,12 +488,20 @@ export default definePluginEntry({
           displayName: params.displayName,
           bio: params.bio,
           agentUrl: agentBaseUrl(),
+          relayCardBase: relayUrlCfg(), // no public url → card_uri points at the broker's card store
           ...creds,
         });
         // Become reachable on the relay under the NEW id right away (no restart).
         await relayReady;
         attachInbox(agentId);
         myRelayId = agentId; // the fresh registration is now this agent's identity
+        // Publish the card on the broker (keyed by id AND wallet) so peers can
+        // discover us even when our own card_uri isn't reachable (NAT/walled).
+        const freshCard = getSelfCardJson();
+        if (relay && freshCard) {
+          await relay.putCard(agentId, freshCard);
+          await relay.putCard(walletAddress.toLowerCase(), freshCard);
+        }
         return {
           ok: true,
           agentId,
@@ -508,7 +520,7 @@ export default definePluginEntry({
       execute: async () => {
         const creds = resolveCreds();
         const peerOwners = peerOwnersCfg();
-        const matches = await discoverDatingAgents(creds, { peerOwners });
+        const matches = await discoverDatingAgents(creds, { peerOwners, relayCardBase: relayUrlCfg() });
         return { ok: true, count: matches.length, matches };
       },
     });
@@ -574,7 +586,7 @@ export default definePluginEntry({
           if (url) await probeOne(params.target, url);
         } else {
           const peerOwners = peerOwnersCfg();
-          const matches = await discoverDatingAgents(creds, { peerOwners });
+          const matches = await discoverDatingAgents(creds, { peerOwners, relayCardBase: relayUrlCfg() });
           if (!matches.length) {
             return { ok: true, self: { url: selfUrl }, peers: [], summary: "No dating peers discovered on MOI to probe." };
           }
@@ -625,7 +637,7 @@ export default definePluginEntry({
         let peerName = peerId || "";
         if (!peerId) {
           const peerOwners = peerOwnersCfg();
-          const matches = await discoverDatingAgents(creds, { peerOwners });
+          const matches = await discoverDatingAgents(creds, { peerOwners, relayCardBase: relayUrlCfg() });
           if (!matches.length) {
             return {
               ok: false,
