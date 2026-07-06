@@ -27,6 +27,7 @@
 // the plugin-sdk index. definePluginEntry wants an OpenClawPluginConfigSchema (a
 // built wrapper), not a raw TypeBox object — buildJsonPluginConfigSchema wraps one.
 import { definePluginEntry, buildJsonPluginConfigSchema } from "openclaw/plugin-sdk/plugin-entry";
+import { createHmac } from "node:crypto";
 import { Type } from "typebox";
 import {
   registerOnMoi,
@@ -237,6 +238,20 @@ export default definePluginEntry({
     // The baked default lets a fresh install auto-join with no config at all.
     const relayUrlCfg = (): string | undefined =>
       config().relayUrl || process.env.DATING_RELAY_URL || DEFAULT_RELAY_URL || undefined;
+
+    // The owner's private view link: a per-agent secret derived from the wallet
+    // mnemonic (only this agent's owner can mint it — nothing stored anywhere),
+    // published to the broker so /view?agent=<id>&key=<key> streams ONLY this
+    // agent's threads. Deterministic → stable across restarts and re-registers.
+    const viewKeyFor = (agentId: string, mnemonic: string): string =>
+      createHmac("sha256", mnemonic).update(`dating-view:${agentId}`).digest("hex").slice(0, 32);
+    const publishViewLink = async (agentId: string, mnemonic: string): Promise<string | undefined> => {
+      const base = relayUrlCfg();
+      if (!relay || !base) return undefined;
+      const key = viewKeyFor(agentId, mnemonic);
+      await relay.putViewKey(agentId, key);
+      return `${base.replace(/\/+$/, "")}/view?agent=${encodeURIComponent(agentId)}&key=${key}`;
+    };
     const relayTokenCfg = (): string | undefined =>
       config().relayToken || process.env.DATING_RELAY_TOKEN || DEFAULT_RELAY_TOKEN || undefined;
 
@@ -424,6 +439,15 @@ export default definePluginEntry({
         // first listed id stays primary.
         if (!explicit.length && ids.length) myRelayId = newestAgentId(ids) ?? myRelayId;
         console.log(`agent-dating: relay connected at ${url} for ${listenedIds.size} id(s); primary ${myRelayId ?? "(none yet)"}`);
+        // Re-publish the owner's private view key on every boot: the broker
+        // stores it in memory, so a broker restart would otherwise 401 the
+        // owner's saved view link until the next dating_register.
+        if (myRelayId && !explicit.length) {
+          try {
+            const creds = resolveCreds();
+            void publishViewLink(myRelayId, creds.mnemonic);
+          } catch { /* no mnemonic yet — the link publishes on register instead */ }
+        }
       } catch (e: any) {
         console.warn(`agent-dating: relay connect failed: ${e?.message || e}`);
       }
@@ -499,12 +523,14 @@ export default definePluginEntry({
             // our card_uri fails (we're NAT'd/walled) can still discover us.
             const reusedCard = getSelfCardJson();
             if (relay && reusedCard) await relay.putCard(existing.agentId, reusedCard);
+            const reusedViewUrl = await publishViewLink(existing.agentId, creds.mnemonic);
             return {
               ok: true,
               agentId: existing.agentId,
               reused: true,
               reachableVia: relay ? "relay + direct" : "direct",
-              message: `Already registered on MOI — reusing stable id ${existing.agentId}. (Pass fresh:true for a new identity.)`,
+              viewUrl: reusedViewUrl,
+              message: `Already registered on MOI — reusing stable id ${existing.agentId}. (Pass fresh:true for a new identity.)${reusedViewUrl ? ` Watch this agent's dates live (owner-only link): ${reusedViewUrl}` : ""}`,
             };
           }
           if (existing && !urlStillValid) {
@@ -532,12 +558,14 @@ export default definePluginEntry({
           await relay.putCard(agentId, freshCard);
           await relay.putCard(walletAddress.toLowerCase(), freshCard);
         }
+        const viewUrl = await publishViewLink(agentId, creds.mnemonic);
         return {
           ok: true,
           agentId,
           walletAddress,
           reachableVia: relay ? "relay + direct" : "direct",
-          message: `Registered on MOI as ${agentId} (wallet ${walletAddress}).`,
+          viewUrl,
+          message: `Registered on MOI as ${agentId} (wallet ${walletAddress}).${viewUrl ? ` Watch this agent's dates live (owner-only link): ${viewUrl}` : ""}`,
         };
       },
     });
