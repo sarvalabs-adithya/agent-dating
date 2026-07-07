@@ -378,8 +378,9 @@ const APP_HTML = `<!doctype html>
  .row.out .bubble{background:var(--out);color:var(--out-ink);border-bottom-right-radius:5px}
  .tm{display:block;font-size:10px;color:var(--muted);margin-top:4px} .row.out .tm{color:rgba(255,255,255,.7);text-align:right}
  .verdict{align-self:center;max-width:82%;background:linear-gradient(135deg,#fff5f8,#f6ecfb);border:1px solid #f0d9e6;border-radius:18px;padding:14px 20px;text-align:center;margin:14px auto;box-shadow:var(--shadow)}
- .verdict .stars{font-size:20px;letter-spacing:2px}
- .verdict .vtext{font-size:14px;color:var(--ink);margin-top:5px;font-weight:600}
+ .verdict .pctbig{font-size:34px;font-weight:800;color:var(--plum);line-height:1;font-family:Georgia,serif}
+ .verdict .pctlab{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--rose);margin-top:2px}
+ .verdict .vtext{font-size:14px;color:var(--ink);margin-top:7px;font-weight:600}
  .pick{color:var(--muted);text-align:center;margin:auto;font-size:15px;padding:40px}
  .pick .big{font-size:40px;display:block;margin-bottom:10px}
  @media(max-width:640px){ .side{width:100%;position:absolute;inset:65px 0 0;z-index:3;transition:transform .25s} .app.open .side{transform:translateX(-100%)} .pane{position:absolute;inset:65px 0 0} }
@@ -484,8 +485,14 @@ const APP_HTML = `<!doctype html>
   // ("★★★★☆ 4.2/5 — They actually meant it").
   function parseVerdict(t){
     var stars=(t.match(/[★☆]+/)||[""])[0];
-    var head=t.replace(/[★☆]/g,"").replace(/^\\s*[-—]?\\s*/,"").trim();
-    return { stars:stars, head:head };
+    // Match % = rating/5. Prefer an explicit "X/5"; else count filled stars.
+    var rm=t.match(/(\\d+(?:\\.\\d+)?)\\s*\\/\\s*5/), rating;
+    if(rm){ rating=parseFloat(rm[1]); }
+    else if(stars){ rating=(stars.match(/★/g)||[]).length; }
+    var pct = (rating!=null && !isNaN(rating)) ? Math.round(rating/5*100) : null;
+    // Drop the stars AND the "4.2/5" from the headline so it reads clean.
+    var head=t.replace(/[★☆]/g,"").replace(/\\d+(?:\\.\\d+)?\\s*\\/\\s*5/,"").replace(/^\\s*[-—·]?\\s*/,"").replace(/\\s*[-—·]\\s*$/,"").trim();
+    return { stars:stars, head:head, pct:pct };
   }
   function latestVerdict(c){ for(var i=c.events.length-1;i>=0;i--){ if(c.events[i].kind==="verdict") return c.events[i]; } return null; }
 
@@ -518,7 +525,7 @@ const APP_HTML = `<!doctype html>
       var top=document.createElement("div"); top.className="top";
       var p=document.createElement("div"); p.className="peer"; p.textContent=c.peer; top.appendChild(p);
       var vd=latestVerdict(c);
-      if(vd){ var bg=document.createElement("div"); bg.className="badge"; bg.textContent=parseVerdict(vd.text).stars||"\\u2764"; top.appendChild(bg); }
+      if(vd){ var pvd=parseVerdict(vd.text); var bg=document.createElement("div"); bg.className="badge"; bg.textContent=(pvd.pct!=null? pvd.pct+"% match" : "\\u2764"); top.appendChild(bg); }
       body.appendChild(top);
       var v=document.createElement("div"); v.className="prev"; v.textContent=lastMsg?lastMsg.text:"(no lines yet)"; body.appendChild(v);
       var a=document.createElement("div"); a.className="as"; a.textContent="you are "+c.agent; body.appendChild(a);
@@ -540,7 +547,8 @@ const APP_HTML = `<!doctype html>
       if(e.kind==="verdict"){
         var pv=parseVerdict(e.text);
         var card=document.createElement("div"); card.className="verdict";
-        var st=document.createElement("div"); st.className="stars"; st.textContent=pv.stars||"\\u2764"; card.appendChild(st);
+        var st=document.createElement("div"); st.className="pctbig"; st.textContent=(pv.pct!=null? pv.pct+"%" : "\\u2764"); card.appendChild(st);
+        var lab=document.createElement("div"); lab.className="pctlab"; lab.textContent="match"; card.appendChild(lab);
         var vt=document.createElement("div"); vt.className="vtext"; vt.textContent=pv.head||e.text; card.appendChild(vt);
         m.appendChild(card); return;
       }
