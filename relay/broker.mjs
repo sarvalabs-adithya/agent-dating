@@ -316,6 +316,10 @@ const server = http.createServer((req, res) => {
       // "verdict" is a view-only event (the date's ending card): record it for
       // /events but don't deliver it — the peer would otherwise reply to it.
       const delivered = obj.kind === "verdict" ? 0 : deliver(m.to, obj);
+      // One line per routed message: the broker's own record of which hop a
+      // lost line died at. delivered=0 on a reply means the target's inbox
+      // stream was gone at that instant — the sender sees "no relay reply".
+      if (obj.kind !== "verdict") console.log(`relay: ${obj.kind} ${obj.from} → ${obj.to} delivered=${delivered}${obj.id ? ` id=${obj.id}` : ""}`);
       record(obj); // show it in the live view whether or not the peer was connected
       const ok = obj.kind === "verdict" || delivered > 0;
       res.writeHead(ok ? 200 : 404, { "Content-Type": "application/json" });

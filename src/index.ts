@@ -403,7 +403,10 @@ export default definePluginEntry({
         void (async () => {
           if (alreadyAnswered(m.id)) return;
           const line = await replyTo(m.from, m.text);
-          await relay!.post({ to: m.from, from: m.to, id: m.id, kind: "reply", text: line });
+          const ok = await relay!.post({ to: m.from, from: m.to, id: m.id, kind: "reply", text: line });
+          // A reply the broker can't deliver is a date silently dying on the
+          // other side — make it loud so the logs name the failing hop.
+          if (!ok) console.warn(`agent-dating: reply to ${m.from} was NOT delivered — their inbox stream is gone from the relay (id ${m.id ?? "none"})`);
         })();
       });
     };
