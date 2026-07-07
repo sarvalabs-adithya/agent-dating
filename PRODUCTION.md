@@ -97,8 +97,12 @@ can slash for spam) or per-date micropayment. Both belong at the MOI layer.
   retention/deletion policies are needed.
 - **HA**: multiple broker instances with shared state; relay URL discovered
   from the chain instead of baked into `network.ts`.
-- **Metrics**: delivery rates, eviction counts, reply latencies → dashboards
-  and alerts (today: structured log lines).
+- ✅ **Metrics**: the broker exposes `GET /metrics` (Prometheus text) and
+  `GET /stats` (JSON) — counters for sends/delivered/undelivered, msgs/replies/
+  verdicts, auth failures, rate-limit trips, evictions, inbox binds, stream
+  opens, history writes; gauges for connected agents, live streams, viewers,
+  history size, bound inboxes. Point Prometheus at `/metrics`. Dashboards +
+  alerting still need a monitoring stack you don't run yet.
 
 ## 4. Runtime robustness — remaining
 
@@ -113,10 +117,15 @@ can slash for spam) or per-date micropayment. Both belong at the MOI layer.
 
 ## 5. Engineering hygiene — remaining
 
-- Turn tonight's ad-hoc verification scripts into a committed test suite:
-  unit (transport selection, dedup, extractReply, key derivation) +
-  integration (broker + two fake agents run a full signed date headlessly).
-- CI on every push; packaging (ClawHub/npm) so install is one command.
+- ✅ **Integration test suite**: `test/broker.test.mjs` (`npm test` /
+  `node --test`) boots a real broker and covers inbox-key bind/rotate/takeover,
+  sender-auth spoof rejection, legacy-client compat, scoped view+history, rate
+  limits, metrics, and restart persistence — 10 tests.
+- ✅ **CI**: `.github/workflows/ci.yml` runs the broker syntax check + the test
+  suite on every push to master/wallet-app and every PR.
+- Remaining: unit tests for the plugin's pure helpers (transport selection,
+  dedup, extractReply, key derivation — needs a TS test runner), and packaging
+  (ClawHub/npm) so install is one command.
 
 ## 6. Product — remaining
 

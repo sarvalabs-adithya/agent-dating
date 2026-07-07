@@ -88,9 +88,22 @@ function clientIp(req) {
   return String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "?";
 }
 function tooMany(res, why) {
+  metrics.rateLimited++;
   res.writeHead(429, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ ok: false, error: `rate limited (${why})` }));
 }
+
+// --- metrics ---------------------------------------------------------------
+// Counters + gauges for observability. Exposed as Prometheus text at /metrics
+// and JSON at /stats. Counters are lifetime-since-boot; gauges are sampled.
+const bootMs = Date.now();
+const metrics = {
+  sendsTotal: 0, delivered: 0, undelivered: 0,
+  repliesRouted: 0, msgsRouted: 0, verdicts: 0,
+  authFailures: 0, rateLimited: 0,
+  evictions: 0, inboxBinds: 0, streamOpens: 0,
+  historyWrites: 0,
+};
 
 /** agentId -> Set<ServerResponse> (an agent may hold more than one stream). */
 const inboxes = new Map();
@@ -179,6 +192,7 @@ function bindInboxKey(agent, key, old) {
   if (cur !== key) {
     inboxKeys.set(agent, key);
     saveJsonMap(IKEYS_FILE, inboxKeys);
+    metrics.inboxBinds++;
     console.log(`relay: inbox key ${cur ? "rebound" : "bound"} for ${agent}`);
   }
   return true;
@@ -204,6 +218,10 @@ function record(obj) {
   history.push(evt);
   if (history.length > HIST_MAX) history.shift();
   fs.appendFile(HIST_FILE, JSON.stringify(evt) + "\n", () => {});
+  metrics.historyWrites++;
+  if (evt.kind === "reply") metrics.repliesRouted++;
+  else if (evt.kind === "verdict") metrics.verdicts++;
+  else metrics.msgsRouted++;
   const line = `data: ${JSON.stringify(evt)}\n\n`;
   for (const v of viewers) {
     if (v.res.writableEnded || v.res.destroyed) { viewers.delete(v); continue; }
@@ -514,6 +532,40 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Observability: Prometheus text at /metrics, JSON snapshot at /stats.
+  // Gauges are sampled at request time; counters are lifetime-since-boot.
+  if (req.method === "GET" && (url.pathname === "/metrics" || url.pathname === "/stats")) {
+    let liveStreams = 0;
+    for (const set of inboxes.values()) liveStreams += set.size;
+    const g = {
+      uptimeSeconds: Math.floor((Date.now() - bootMs) / 1000),
+      connectedAgents: inboxes.size,
+      liveStreams,
+      viewers: viewers.size,
+      historySize: history.length,
+      knownAgents: viewKeys.size,
+      boundInboxes: inboxKeys.size,
+    };
+    if (url.pathname === "/stats") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, counters: metrics, gauges: g }));
+      return;
+    }
+    const lines = [];
+    const P = "dating_relay_";
+    for (const [k, v] of Object.entries(metrics)) {
+      const name = P + k.replace(/[A-Z]/g, (c) => "_" + c.toLowerCase());
+      lines.push(`# TYPE ${name} counter`, `${name} ${v}`);
+    }
+    for (const [k, v] of Object.entries(g)) {
+      const name = P + k.replace(/[A-Z]/g, (c) => "_" + c.toLowerCase());
+      lines.push(`# TYPE ${name} gauge`, `${name} ${v}`);
+    }
+    res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4" });
+    res.end(lines.join("\n") + "\n");
+    return;
+  }
+
   if (!authOk(req, url)) {
     res.writeHead(401, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
@@ -539,6 +591,7 @@ const server = http.createServer((req, res) => {
     const bound = inboxKeys.get(agent);
     if (bound) {
       if (ikey !== bound) {
+        metrics.authFailures++;
         if (overLimit("af", ip, RL_AUTHFAIL_PER_IP)) { tooMany(res, "auth failures"); return; }
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: "inbox key required for this agent id" }));
@@ -565,7 +618,9 @@ const server = http.createServer((req, res) => {
     // reachable party can take over an inbox. Evictions are logged so a
     // takeover (or an unexpected reconnect storm) is at least visible.
     const stale = inboxes.get(agent);
+    metrics.streamOpens++;
     if (stale && stale.size) {
+      metrics.evictions += stale.size;
       console.log(`relay: ${agent} reconnected — evicting ${stale.size} prior stream(s)${TOKEN ? "" : " [no token: eviction is unauthenticated]"}`);
       for (const old of stale) {
         try { old.end(); } catch { /* already gone */ }
@@ -603,6 +658,7 @@ const server = http.createServer((req, res) => {
         return;
       }
       if (!bindInboxKey(agent, key, old)) {
+        metrics.authFailures++;
         if (overLimit("af", clientIp(req), RL_AUTHFAIL_PER_IP)) { tooMany(res, "auth failures"); return; }
         res.writeHead(403, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: "id already bound to a different key (pass the previous key as old)" }));
@@ -669,6 +725,7 @@ const server = http.createServer((req, res) => {
       // agent without its wallet. Keyless senders pass (legacy plugins).
       const senderKey = inboxKeys.get(fromId);
       if (senderKey && m.auth !== msgAuthTag(senderKey, m.to, m.id ?? null, m.text)) {
+        metrics.authFailures++;
         if (overLimit("af", ip, RL_AUTHFAIL_PER_IP)) { tooMany(res, "auth failures"); return; }
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: `sender ${fromId} is key-bound — message auth tag missing or wrong` }));
@@ -684,6 +741,8 @@ const server = http.createServer((req, res) => {
       // "verdict" is a view-only event (the date's ending card): record it for
       // /events but don't deliver it — the peer would otherwise reply to it.
       const delivered = obj.kind === "verdict" ? 0 : deliver(m.to, obj);
+      metrics.sendsTotal++;
+      if (obj.kind !== "verdict") { if (delivered > 0) metrics.delivered++; else metrics.undelivered++; }
       // One line per routed message: the broker's own record of which hop a
       // lost line died at. delivered=0 on a reply means the target's inbox
       // stream was gone at that instant — the sender sees "no relay reply".

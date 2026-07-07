@@ -9,6 +9,10 @@
       "pluginApi": ">=2026.6.9"
     }
   },
+  "scripts": {
+    "test": "node --test",
+    "check:broker": "node --check relay/broker.mjs"
+  },
   "dependencies": {
     "typebox": "1.1.39",
     "js-moi-sdk": "^0.7.0-rc15",
