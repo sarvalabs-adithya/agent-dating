@@ -321,10 +321,12 @@ export default definePluginEntry({
       const viaRelay = async () => {
         if (!relay || !myRelayId || isUrl) throw new Error("relay not available for this target");
         // A peer answering with its REAL agent (useAgentBrain) needs a whole
-        // `openclaw agent` spawn + model turn per line — routinely 10-25s. The
-        // old 20s window was tuned for the instant persona brain and cut
-        // thinking dates off mid-turn ("they stopped replying").
-        const reply = await relay.request(target, myRelayId, text, 75000);
+        // `openclaw agent` spawn + model turn per line. On a slow/cold remote
+        // host that's routinely ~60s, and the peer's own brain timeout is 90s
+        // — so the dialer must wait LONGER than the peer is allowed to think,
+        // plus transit. 75s was shorter than the peer's 90s allowance and cut
+        // cross-machine dates off mid-turn ("they stopped replying").
+        const reply = await relay.request(target, myRelayId, text, 120000);
         return { reply, via: "relay" as const, target };
       };
       // One log line per transport decision so a demo gone quiet is debuggable
