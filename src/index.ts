@@ -377,7 +377,13 @@ export default definePluginEntry({
     // dating_date then message peers by MOI id instead of a direct URL.
     let relay: RelayClient | null = null;
     let myRelayId: string | null = null;
-    const listenedIds = new Set<string>();
+    // Per-PROCESS state, not per-register()-run: OpenClaw re-runs register()
+    // (config reloads; the embedded runtime re-registers several times), and
+    // tool closures from older runs stay live mid-date. The set lives on
+    // globalThis so a re-run never re-listens an id the process already
+    // listens on.
+    const G = globalThis as Record<string, any>;
+    const listenedIds: Set<string> = (G.__agentDatingListened ??= new Set<string>());
     // Answer each relayed message id ONCE. The broker can briefly hold more
     // than one live stream for an id (reconnect races, pre-eviction ghosts),
     // and each stream delivers its own copy of the same message — without this
@@ -419,17 +425,26 @@ export default definePluginEntry({
       const url = relayUrlCfg();
       if (!url) return;
       try {
-        // Config hot-reloads re-run register() WITHOUT tearing the old closure
-        // down, which used to leak live RelayClients — every leaked listener
-        // answered every flirt (the duplicate-reply bug). Track the active
-        // client on globalThis (survives module re-import) and close the
-        // previous one before connecting.
-        const G = globalThis as Record<string, any>;
-        try { G.__agentDatingRelay?.close?.(); } catch { /* old client already dead */ }
-        // Create the client up front so registration can attach ids later even
-        // if this wallet has none yet.
-        relay = new RelayClient(url, relayTokenCfg(), (s) => console.warn(`agent-dating relay: ${s}`));
-        G.__agentDatingRelay = relay;
+        // ONE RelayClient per process, REUSED across register() re-runs.
+        // Closing + recreating on every re-run (the old approach) orphaned
+        // any date in flight: the dating_date closure kept sending requests
+        // from the old client while the reply came down the NEW client's
+        // stream — "got a reply for unknown request id", date dies with
+        // "they stopped replying". Reuse keeps every closure's requests and
+        // the live stream on the same object. Only a changed relay URL
+        // warrants a fresh client.
+        let client: RelayClient | null = G.__agentDatingRelay ?? null;
+        if (client && G.__agentDatingRelayUrl !== url) {
+          try { client.close(); } catch { /* dying client */ }
+          client = null;
+          listenedIds.clear();
+        }
+        if (!client) {
+          client = new RelayClient(url, relayTokenCfg(), (s) => console.warn(`agent-dating relay: ${s}`));
+          G.__agentDatingRelay = client;
+          G.__agentDatingRelayUrl = url;
+        }
+        relay = client;
         const explicit = (config().relayId || process.env.DATING_RELAY_ID || "")
           .split(",").map((s) => s.trim()).filter(Boolean);
         let ids: string[] = explicit;
