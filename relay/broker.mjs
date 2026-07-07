@@ -425,11 +425,19 @@ const APP_HTML = `<!doctype html>
   function concat(a,b){ var c=new Uint8Array(a.length+b.length); c.set(a); c.set(b,a.length); return c; }
   async function deriveKey(mn, agentId){
     var msg="dating-view:"+agentId;
-    if(typeof crypto!=="undefined" && crypto.subtle){
+    // Use WebCrypto ONLY in a genuine secure context. Over plain http some
+    // browsers expose crypto.subtle but its ops never settle (hang forever) —
+    // so gate on isSecureContext and otherwise use the pure-JS HMAC, which is
+    // byte-identical. A hard 2s race guards the subtle path regardless.
+    if (window.isSecureContext && typeof crypto!=="undefined" && crypto.subtle){
       try{
-        var k=await crypto.subtle.importKey("raw", enc.encode(mn), {name:"HMAC",hash:"SHA-256"}, false, ["sign"]);
-        var sig=await crypto.subtle.sign("HMAC", k, enc.encode(msg));
-        return hex(sig).slice(0,32);
+        var viaSubtle=(async function(){
+          var k=await crypto.subtle.importKey("raw", enc.encode(mn), {name:"HMAC",hash:"SHA-256"}, false, ["sign"]);
+          var sig=await crypto.subtle.sign("HMAC", k, enc.encode(msg));
+          return hex(sig).slice(0,32);
+        })();
+        var timeout=new Promise(function(_,rej){ setTimeout(function(){ rej(new Error("subtle timeout")); }, 2000); });
+        return await Promise.race([viaSubtle, timeout]);
       }catch(e){ /* fall through to pure-JS */ }
     }
     return hex(hmacSha256(enc.encode(mn), enc.encode(msg))).slice(0,32);
