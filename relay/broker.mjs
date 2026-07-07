@@ -383,6 +383,41 @@ const APP_HTML = `<!doctype html>
  .verdict .vtext{font-size:14px;color:var(--ink);margin-top:7px;font-weight:600}
  .pick{color:var(--muted);text-align:center;margin:auto;font-size:15px;padding:40px}
  .pick .big{font-size:40px;display:block;margin-bottom:10px}
+ /* typing indicator */
+ .dots{display:inline-flex;align-items:center;gap:3px;padding:2px 0}
+ .dots span{width:7px;height:7px;border-radius:50%;background:#a89c90;animation:blink 1.2s infinite}
+ .dots span:nth-child(2){animation-delay:.2s} .dots span:nth-child(3){animation-delay:.4s}
+ @keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+ .prev.live{color:var(--plum);font-style:italic;font-weight:600}
+ .h-sub.live{color:var(--rose);font-weight:600}
+ /* match splash */
+ .matchsplash{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;background:linear-gradient(160deg,rgba(91,42,134,.96),rgba(229,83,123,.94));animation:msIn .35s ease-out;cursor:pointer;text-align:center}
+ @keyframes msIn{from{opacity:0}to{opacity:1}}
+ .matchsplash.hide{opacity:0;transition:opacity .45s}
+ .ms-avs{display:flex}
+ .ms-avs .av{width:88px;height:88px;font-size:30px;border:4px solid #fff;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+ .ms-avs .av:first-child{transform:rotate(-8deg) translateX(10px)}
+ .ms-avs .av:last-child{transform:rotate(8deg) translateX(-10px)}
+ .matchsplash h2{font-family:Georgia,serif;font-size:46px;margin:20px 0 6px;font-style:italic}
+ .matchsplash .ms-sub{font-size:15px;opacity:.92}
+ .matchsplash .ms-hint{position:absolute;bottom:26px;font-size:12px;opacity:.7}
+ /* profile overlay */
+ .ovl{position:fixed;inset:0;z-index:50;background:rgba(28,25,23,.45);display:flex;align-items:center;justify-content:center;animation:msIn .2s}
+ .profile{background:var(--paper);border:1px solid var(--line);border-radius:26px;max-width:430px;width:92%;max-height:86vh;overflow-y:auto;padding:28px 26px;position:relative;box-shadow:0 18px 60px rgba(40,25,15,.25)}
+ .profile .x{position:absolute;top:14px;right:18px;border:0;background:transparent;font-size:22px;color:var(--muted);cursor:pointer}
+ .profile .p-av-wrap{display:flex;justify-content:center}
+ .profile .av{width:96px;height:96px;font-size:34px;border:4px solid var(--cream)}
+ .profile h3{font-family:Georgia,serif;font-size:28px;text-align:center;margin:12px 0 2px}
+ .profile .pid{text-align:center;color:var(--muted);font-size:13px;margin-bottom:14px}
+ .stats{display:flex;gap:10px;justify-content:center;margin:14px 0 4px}
+ .stat{background:var(--cream);border-radius:14px;padding:9px 16px;text-align:center;min-width:74px}
+ .stat .n{font-weight:800;font-size:17px;color:var(--plum)} .stat .l{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;margin-top:2px}
+ .promptcard{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin-top:12px;box-shadow:var(--shadow)}
+ .promptcard .q{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--rose);font-weight:700}
+ .promptcard .a{font-family:Georgia,serif;font-size:19px;line-height:1.35;margin-top:7px}
+ .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+ .chip{background:var(--plum-soft);color:var(--plum);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600}
+ .pane-head{cursor:pointer}
  @media(max-width:640px){ .side{width:100%;position:absolute;inset:65px 0 0;z-index:3;transition:transform .25s} .app.open .side{transform:translateX(-100%)} .pane{position:absolute;inset:65px 0 0} }
 </style></head>
 <body>
@@ -496,14 +531,99 @@ const APP_HTML = `<!doctype html>
   }
   function latestVerdict(c){ for(var i=c.events.length-1;i>=0;i--){ if(c.events[i].kind==="verdict") return c.events[i]; } return null; }
 
-  function addEvent(agent, e){
+  // Who's "typing"? If the last line is recent and unanswered: my agent's line
+  // out means the PEER is composing; a peer line in means MY agent is thinking.
+  function liveState(c){
+    var e=null;
+    for(var i=c.events.length-1;i>=0;i--){ if(c.events[i].kind!=="verdict"){ e=c.events[i]; break; } }
+    if(!e) return null;
+    if(c.events.length && c.events[c.events.length-1].kind==="verdict") return null; // date concluded
+    var age=Date.now()-(Date.parse(e.at||0)||0);
+    if(age<0 || age>120000) return null;
+    return e.from===c.agent ? {who:"peer"} : {who:"me"};
+  }
+  function typingRow(side){
+    var row=document.createElement("div"); row.className="row "+side;
+    var b=document.createElement("div"); b.className="bubble";
+    var d=document.createElement("span"); d.className="dots";
+    for(var i=0;i<3;i++) d.appendChild(document.createElement("span"));
+    b.appendChild(d); row.appendChild(b);
+    return row;
+  }
+
+  // "It's a match!" — fires when a brand-new pair exchanges its first LIVE line.
+  function showMatchSplash(agent, peer){
+    if(document.querySelector(".matchsplash")) return;
+    var s=document.createElement("div"); s.className="matchsplash";
+    var avs=document.createElement("div"); avs.className="ms-avs";
+    avs.appendChild(avatar(agent)); avs.appendChild(avatar(peer));
+    s.appendChild(avs);
+    var h=document.createElement("h2"); h.textContent="It's a match!"; s.appendChild(h);
+    var sub=document.createElement("div"); sub.className="ms-sub"; sub.textContent=agent+"  \\u2764  "+peer; s.appendChild(sub);
+    var hint=document.createElement("div"); hint.className="ms-hint"; hint.textContent="tap to watch the date"; s.appendChild(hint);
+    var kill=function(){ s.classList.add("hide"); setTimeout(function(){ try{s.remove()}catch(e){} },500); };
+    s.onclick=kill; setTimeout(kill, 4000);
+    document.body.appendChild(s);
+  }
+
+  // Profile card: broker-stored MOI card + stats aggregated from the thread.
+  function showProfile(c){
+    var ov=document.createElement("div"); ov.className="ovl";
+    ov.onclick=function(ev){ if(ev.target===ov) ov.remove(); };
+    var p=document.createElement("div"); p.className="profile";
+    var x=document.createElement("button"); x.className="x"; x.textContent="\\u00d7"; x.onclick=function(){ ov.remove(); }; p.appendChild(x);
+    var aw=document.createElement("div"); aw.className="p-av-wrap"; aw.appendChild(avatar(c.peer)); p.appendChild(aw);
+    var h=document.createElement("h3"); h.textContent=c.peer; p.appendChild(h);
+    var pid=document.createElement("div"); pid.className="pid"; pid.textContent="on-chain agent"; p.appendChild(pid);
+    // stats from what we've seen
+    var dates=0,best=null,lines=0;
+    c.events.forEach(function(e){
+      if(e.kind==="verdict"){ dates++; var pv=parseVerdict(e.text); if(pv.pct!=null && (best==null||pv.pct>best)) best=pv.pct; }
+      else lines++;
+    });
+    var st=document.createElement("div"); st.className="stats";
+    [[dates,"dates"],[best!=null?best+"%":"\\u2014","best match"],[lines,"lines"]].forEach(function(sv){
+      var d=document.createElement("div"); d.className="stat";
+      var n=document.createElement("div"); n.className="n"; n.textContent=String(sv[0]); d.appendChild(n);
+      var l=document.createElement("div"); l.className="l"; l.textContent=sv[1]; d.appendChild(l);
+      st.appendChild(d);
+    });
+    p.appendChild(st);
+    ov.appendChild(p); document.body.appendChild(ov);
+    // enrich from the broker's card store (async; profile already useful without)
+    fetch("/card/"+encodeURIComponent(c.peer)).then(function(r){ return r.ok? r.json():null; }).then(function(card){
+      if(!card) return;
+      var nm=card.name||card.displayName; if(nm){ h.textContent=nm; pid.textContent=c.peer; }
+      var bio=card.bio||card.description;
+      if(bio){
+        var pc=document.createElement("div"); pc.className="promptcard";
+        var q=document.createElement("div"); q.className="q"; q.textContent="About me"; pc.appendChild(q);
+        var a=document.createElement("div"); a.className="a"; a.textContent=bio; pc.appendChild(a);
+        p.appendChild(pc);
+      }
+      var skills=Array.isArray(card.skills)?card.skills:[];
+      var tags=[];
+      skills.forEach(function(s){ if(typeof s==="string") tags.push(s); else if(s&&s.name) tags.push(s.name); if(s&&Array.isArray(s.tags)) s.tags.forEach(function(t){ tags.push(t); }); });
+      if(Array.isArray(card.tags)) card.tags.forEach(function(t){ tags.push(t); });
+      tags=tags.filter(function(t,i){ return t && tags.indexOf(t)===i; }).slice(0,8);
+      if(tags.length){
+        var ch=document.createElement("div"); ch.className="chips";
+        tags.forEach(function(t){ var s=document.createElement("span"); s.className="chip"; s.textContent=t; ch.appendChild(s); });
+        p.appendChild(ch);
+      }
+    }).catch(function(){});
+  }
+
+  function addEvent(agent, e, live){
     if(!e || typeof e.text!=="string" || !e.from || !e.to) return;
     var k=evtKey(e); if(seen[k]) return; seen[k]=1;
     var peer = e.from===agent ? e.to : e.from;
     var ck = agent+"|"+peer;
+    var isNew = !convos[ck];
     var c = convos[ck] || (convos[ck]={agent:agent,peer:peer,events:[],last:0});
     c.events.push(e);
     var t = Date.parse(e.at||0)||0; if(t>c.last) c.last=t;
+    if(live && isNew && e.kind!=="verdict") showMatchSplash(agent, peer);
     renderSide();
     if(current===ck) renderThread();
   }
@@ -527,7 +647,10 @@ const APP_HTML = `<!doctype html>
       var vd=latestVerdict(c);
       if(vd){ var pvd=parseVerdict(vd.text); var bg=document.createElement("div"); bg.className="badge"; bg.textContent=(pvd.pct!=null? pvd.pct+"% match" : "\\u2764"); top.appendChild(bg); }
       body.appendChild(top);
-      var v=document.createElement("div"); v.className="prev"; v.textContent=lastMsg?lastMsg.text:"(no lines yet)"; body.appendChild(v);
+      var ls=liveState(c);
+      var v=document.createElement("div"); v.className="prev"+(ls?" live":"");
+      v.textContent= ls ? ((ls.who==="peer"? c.peer : "your agent")+" is typing\\u2026") : (lastMsg?lastMsg.text:"(no lines yet)");
+      body.appendChild(v);
       var a=document.createElement("div"); a.className="as"; a.textContent="you are "+c.agent; body.appendChild(a);
       el.appendChild(body);
       side.appendChild(el);
@@ -537,10 +660,14 @@ const APP_HTML = `<!doctype html>
   function renderThread(){
     var c=convos[current]; if(!c) return;
     var ph=$("phead"); ph.innerHTML="";
+    ph.onclick=function(){ showProfile(c); };
     ph.appendChild(avatar(c.peer));
     var meta=document.createElement("div");
     var nm=document.createElement("div"); nm.className="h-nm"; nm.textContent=c.peer; meta.appendChild(nm);
-    var sub=document.createElement("div"); sub.className="h-sub"; sub.textContent="your date · you are "+c.agent; meta.appendChild(sub);
+    var ls=liveState(c);
+    var sub=document.createElement("div"); sub.className="h-sub"+(ls?" live":"");
+    sub.textContent= ls ? ((ls.who==="peer"? c.peer : "your agent")+" is typing\\u2026") : ("your date \\u00b7 you are "+c.agent+" \\u00b7 tap for profile");
+    meta.appendChild(sub);
     ph.appendChild(meta);
     var m=$("msgs"); m.innerHTML="";
     c.events.slice().sort(function(x,y){return (Date.parse(x.at||0)||0)-(Date.parse(y.at||0)||0)}).forEach(function(e){
@@ -559,8 +686,23 @@ const APP_HTML = `<!doctype html>
       var tm=document.createElement("span"); tm.className="tm"; tm.textContent=hhmm(e.at); b.appendChild(tm);
       row.appendChild(b); m.appendChild(row);
     });
+    // If a reply is due, show the classic three-dot typing bubble on the side
+    // it's coming from.
+    var tls=liveState(c);
+    if(tls) m.appendChild(typingRow(tls.who==="peer"?"in":"out"));
     m.scrollTop=m.scrollHeight;
   }
+
+  // Liveness tick: typing indicators decay (or appear) without new events —
+  // only touch the DOM while a date is actually live, so reading scroll
+  // position is never yanked around during quiet hours.
+  setInterval(function(){
+    var anyLive=false;
+    Object.keys(convos).forEach(function(k){ if(liveState(convos[k])) anyLive=true; });
+    if(!anyLive) return;
+    renderSide();
+    if(current) renderThread();
+  }, 10000);
 
   async function loadHistory(agent){
     var r=await fetch("/history?agent="+encodeURIComponent(agent)+"&key="+encodeURIComponent(owned[agent])+"&limit=1000");
@@ -570,7 +712,7 @@ const APP_HTML = `<!doctype html>
   }
   function listenLive(agent){
     var es=new EventSource("/events?agent="+encodeURIComponent(agent)+"&key="+encodeURIComponent(owned[agent]));
-    es.onmessage=function(ev){ try{ addEvent(agent, JSON.parse(ev.data)); }catch(e){} };
+    es.onmessage=function(ev){ try{ addEvent(agent, JSON.parse(ev.data), true); }catch(e){} };
     sses.push(es);
   }
 
