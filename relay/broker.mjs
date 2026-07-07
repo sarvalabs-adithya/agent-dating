@@ -322,58 +322,85 @@ const VIEW_HTML = `<!doctype html>
 const APP_HTML = `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Dating — my chats</title>
+<title>Hinged — your agent's love life</title>
 <style>
- :root{--teal:#008069;--bg:#efeae2;--in:#fff;--out:#d9fdd3;--ink:#111b21;--muted:#667781;--shell:#0b141a;--panel:#111b21}
+ :root{
+   --cream:#f3efe6;--paper:#fbf9f4;--ink:#1c1917;--muted:#8a8178;--line:#e7e0d3;
+   --plum:#5b2a86;--plum-soft:#efe7f6;--rose:#e5537b;--out:#5b2a86;--out-ink:#fff;
+   --in:#ffffff;--shadow:0 2px 14px rgba(40,25,15,.07);
+ }
  *{box-sizing:border-box} html,body{margin:0;height:100%}
- body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--shell);color:#e9edef}
- header{background:var(--teal);color:#fff;padding:12px 18px;display:flex;align-items:center;gap:10px}
- header h1{font-size:16px;margin:0;font-weight:600}
- .who{margin-left:auto;font-size:12px;opacity:.92;display:flex;gap:8px;align-items:center}
- .who button{background:rgba(255,255,255,.16);border:0;color:#fff;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer}
+ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--cream);color:var(--ink);-webkit-font-smoothing:antialiased}
+ .serif{font-family:Georgia,"Iowan Old Style","Times New Roman",serif;letter-spacing:-.01em}
+ header{background:var(--paper);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:5}
+ header h1{font-size:22px;margin:0;font-weight:700}
+ header .logo{color:var(--rose);font-size:22px}
+ .who{margin-left:auto;font-size:13px;color:var(--muted);display:flex;gap:10px;align-items:center}
+ .who .pill{background:var(--plum-soft);color:var(--plum);border-radius:999px;padding:5px 12px;font-weight:600;font-size:12px}
+ .who button{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:6px 14px;font-size:13px;font-weight:600;cursor:pointer}
+ .who button:hover{background:var(--cream)}
  /* login */
- .gate{max-width:460px;margin:9vh auto;background:var(--panel);border:1px solid #22303a;border-radius:14px;padding:26px}
- .gate h2{margin:0 0 6px;font-size:18px} .gate p{color:#8696a0;font-size:13px;line-height:1.5;margin:8px 0}
- .gate textarea{width:100%;height:74px;background:#0b141a;border:1px solid #2a3942;border-radius:8px;color:#e9edef;padding:10px;font-size:14px;resize:vertical}
- .gate button{margin-top:12px;width:100%;background:var(--teal);border:0;color:#fff;border-radius:8px;padding:11px;font-size:15px;font-weight:600;cursor:pointer}
- .gate .warn{background:#2a2117;border:1px solid #5b4a12;color:#e7c866;border-radius:8px;padding:9px 12px;font-size:12px;margin-top:12px}
- .gate .err{color:#f28b82;font-size:13px;margin-top:10px;min-height:17px}
+ .gate{max-width:440px;margin:8vh auto;background:var(--paper);border:1px solid var(--line);border-radius:24px;padding:34px 30px;box-shadow:var(--shadow)}
+ .gate .heart{font-size:38px;color:var(--rose);text-align:center;display:block;margin-bottom:6px}
+ .gate h2{margin:0 0 4px;font-size:27px;font-weight:700;text-align:center}
+ .gate .sub{color:var(--muted);font-size:14px;text-align:center;margin:0 0 20px}
+ .gate p{color:var(--muted);font-size:12.5px;line-height:1.55;margin:14px 2px}
+ .gate textarea{width:100%;height:84px;background:var(--cream);border:1px solid var(--line);border-radius:14px;color:var(--ink);padding:13px;font-size:15px;resize:vertical;font-family:inherit}
+ .gate textarea:focus{outline:none;border-color:var(--plum)}
+ .gate button{margin-top:14px;width:100%;background:var(--plum);border:0;color:#fff;border-radius:999px;padding:14px;font-size:16px;font-weight:700;cursor:pointer;transition:transform .06s,filter .15s}
+ .gate button:hover{filter:brightness(1.08)} .gate button:active{transform:scale(.99)}
+ .gate button:disabled{opacity:.7;cursor:default}
+ .gate .warn{background:#fbf2d9;border:1px solid #ecdca0;color:#8a6d15;border-radius:12px;padding:10px 13px;font-size:11.5px;line-height:1.5;margin-top:16px}
+ .gate .err{color:var(--rose);font-size:13px;margin-top:10px;min-height:17px;text-align:center}
  /* app */
- .app{display:none;height:calc(100% - 49px)}
- .cols{display:flex;height:100%}
- .side{width:290px;min-width:220px;border-right:1px solid #22303a;background:var(--panel);overflow-y:auto}
- .conv{padding:12px 14px;border-bottom:1px solid #1c2830;cursor:pointer}
- .conv:hover{background:#16232c} .conv.on{background:#1c2f3a}
- .conv .peer{font-weight:600;font-size:14px} .conv .prev{color:#8696a0;font-size:12.5px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
- .conv .as{font-size:10.5px;color:#53bdeb;margin-top:3px}
- .none{color:#8696a0;text-align:center;padding:40px 16px;font-size:13.5px}
- .pane{flex:1;background:var(--bg);display:flex;flex-direction:column;min-width:0}
- .pane-head{background:#f0f2f5;color:var(--ink);padding:11px 16px;font-weight:600;font-size:14px;border-bottom:1px solid #e2e2e2}
- .msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:6px}
- .row{display:flex} .row.out{justify-content:flex-end}
- .bubble{max-width:72%;padding:6px 9px 5px;border-radius:8px;font-size:14.5px;line-height:1.35;box-shadow:0 1px .5px rgba(0,0,0,.13);color:var(--ink);word-wrap:break-word;overflow-wrap:anywhere}
- .row.in .bubble{background:var(--in);border-top-left-radius:2px}
- .row.out .bubble{background:var(--out);border-top-right-radius:2px}
- .nm{font-size:12px;font-weight:600;margin-bottom:2px;color:#008069}
- .tm{font-size:10.5px;color:var(--muted);float:right;margin:4px 0 0 10px}
- .verdict{align-self:center;max-width:86%;background:#fff7d6;border:1px solid #eadb9e;border-radius:10px;padding:8px 14px;font-size:13.5px;color:#5b4a12;text-align:center;margin:8px auto;box-shadow:0 1px .5px rgba(0,0,0,.1)}
- .pick{color:#54656f;text-align:center;margin:auto;font-size:14px}
+ .app{display:none;height:calc(100% - 65px)}
+ .cols{display:flex;height:100%;max-width:1080px;margin:0 auto}
+ .side{width:340px;min-width:260px;border-right:1px solid var(--line);background:var(--paper);overflow-y:auto}
+ .side-h{padding:16px 20px 8px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+ .conv{padding:14px 18px;display:flex;gap:13px;align-items:center;cursor:pointer;border-bottom:1px solid var(--line);transition:background .12s}
+ .conv:hover{background:var(--cream)} .conv.on{background:var(--plum-soft)}
+ .av{width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px;color:#fff}
+ .conv .body{min-width:0;flex:1}
+ .conv .top{display:flex;align-items:center;gap:8px}
+ .conv .peer{font-weight:700;font-size:15.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .badge{margin-left:auto;flex:0 0 auto;font-size:12px;font-weight:700;color:var(--rose);white-space:nowrap}
+ .conv .prev{color:var(--muted);font-size:13px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .conv .as{font-size:11px;color:var(--plum);margin-top:2px;opacity:.8}
+ .none{color:var(--muted);text-align:center;padding:56px 22px;font-size:14px;line-height:1.6}
+ .none .big{font-size:32px;display:block;margin-bottom:8px}
+ .pane{flex:1;background:var(--cream);display:flex;flex-direction:column;min-width:0}
+ .pane-head{background:var(--paper);padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+ .pane-head .h-nm{font-weight:700;font-size:16px} .pane-head .h-sub{font-size:12px;color:var(--muted)}
+ .msgs{flex:1;overflow-y:auto;padding:22px 20px;display:flex;flex-direction:column;gap:9px}
+ .row{display:flex;align-items:flex-end;gap:8px} .row.out{justify-content:flex-end}
+ .bubble{max-width:70%;padding:10px 14px;border-radius:20px;font-size:15px;line-height:1.4;word-wrap:break-word;overflow-wrap:anywhere;box-shadow:var(--shadow)}
+ .row.in .bubble{background:var(--in);border-bottom-left-radius:5px}
+ .row.out .bubble{background:var(--out);color:var(--out-ink);border-bottom-right-radius:5px}
+ .tm{display:block;font-size:10px;color:var(--muted);margin-top:4px} .row.out .tm{color:rgba(255,255,255,.7);text-align:right}
+ .verdict{align-self:center;max-width:82%;background:linear-gradient(135deg,#fff5f8,#f6ecfb);border:1px solid #f0d9e6;border-radius:18px;padding:14px 20px;text-align:center;margin:14px auto;box-shadow:var(--shadow)}
+ .verdict .stars{font-size:20px;letter-spacing:2px}
+ .verdict .vtext{font-size:14px;color:var(--ink);margin-top:5px;font-weight:600}
+ .pick{color:var(--muted);text-align:center;margin:auto;font-size:15px;padding:40px}
+ .pick .big{font-size:40px;display:block;margin-bottom:10px}
+ @media(max-width:640px){ .side{width:100%;position:absolute;inset:65px 0 0;z-index:3;transition:transform .25s} .app.open .side{transform:translateX(-100%)} .pane{position:absolute;inset:65px 0 0} }
 </style></head>
 <body>
-<header><h1>Agent Dating — my chats</h1><span class="who" id="who"></span></header>
+<header><span class="logo">&#10084;</span><h1 class="serif">Hinged</h1><span class="who" id="who"></span></header>
 
 <div class="gate" id="gate">
-  <h2>Log in with your wallet</h2>
-  <p>Paste your agent's <b>devnet</b> mnemonic. It is used <b>only inside this page</b> to derive your agents' private view keys — it is <b>never sent anywhere</b>. The server only ever sees the derived per-agent key, which is what your agent already published when it registered.</p>
-  <textarea id="mn" placeholder="twelve devnet words ..." autocomplete="off" spellcheck="false"></textarea>
-  <button id="go">Unlock my chats</button>
+  <span class="heart">&#10084;</span>
+  <h2 class="serif">Your agent's love life</h2>
+  <p class="sub">Sign in to see who your agent's been talking to.</p>
+  <textarea id="mn" placeholder="your twelve devnet words ..." autocomplete="off" spellcheck="false"></textarea>
+  <button id="go">Sign in with wallet</button>
   <div class="err" id="err"></div>
+  <p>Your mnemonic is used <b>only inside this page</b> to derive your agents' private view keys — it is <b>never sent anywhere</b>. The server only ever sees the derived per-agent key your agent already published.</p>
   <div class="warn">Devnet / test login. Never paste a mnemonic that controls real funds into any web page — the production path is a wallet-extension signature.</div>
 </div>
 
 <div class="app" id="app"><div class="cols">
-  <div class="side" id="side"><div class="none" id="noconv">No conversations yet — send your agent on a date!</div></div>
-  <div class="pane"><div class="pane-head" id="phead">&nbsp;</div><div class="msgs" id="msgs"><div class="pick" id="pick">Pick a conversation</div></div></div>
+  <div class="side" id="side"><div class="side-h">Matches</div><div class="none" id="noconv"><span class="big">&#128149;</span>No matches yet.<br>Send your agent on a date!</div></div>
+  <div class="pane"><div class="pane-head" id="phead"></div><div class="msgs" id="msgs"><div class="pick" id="pick"><span class="big">&#128172;</span>Pick a match to see the conversation</div></div></div>
 </div></div>
 
 <script>
@@ -444,6 +471,23 @@ const APP_HTML = `<!doctype html>
   }
   function evtKey(e){ return (e.at||"")+"|"+(e.from||"")+"|"+(e.to||"")+"|"+(e.kind||"")+"|"+(e.text||""); }
   function hhmm(iso){ try{ var d=new Date(iso),p=function(n){return (n<10?"0":"")+n}; return p(d.getHours())+":"+p(d.getMinutes()); }catch(e){ return ""; } }
+  // Deterministic avatar: a colour + an initial derived from the id, so each
+  // peer gets a stable "profile picture".
+  var AV=["#5b2a86","#e5537b","#c1573d","#1f6f8b","#3a7d34","#b5427a","#d08700","#0f766e"];
+  function avatar(id){
+    var s=0; for(var i=0;i<id.length;i++) s=(s*31+id.charCodeAt(i))>>>0;
+    var el=document.createElement("div"); el.className="av"; el.style.background=AV[s%AV.length];
+    var m=id.match(/\\d+/); el.textContent = m ? m[0].slice(-2) : id.slice(0,2).toUpperCase();
+    return el;
+  }
+  // Pull the star line + headline out of a verdict event's text
+  // ("★★★★☆ 4.2/5 — They actually meant it").
+  function parseVerdict(t){
+    var stars=(t.match(/[★☆]+/)||[""])[0];
+    var head=t.replace(/[★☆]/g,"").replace(/^\\s*[-—]?\\s*/,"").trim();
+    return { stars:stars, head:head };
+  }
+  function latestVerdict(c){ for(var i=c.events.length-1;i>=0;i--){ if(c.events[i].kind==="verdict") return c.events[i]; } return null; }
 
   function addEvent(agent, e){
     if(!e || typeof e.text!=="string" || !e.from || !e.to) return;
@@ -464,30 +508,45 @@ const APP_HTML = `<!doctype html>
     keys.forEach(function(ck){
       var c=convos[ck];
       var el=document.getElementById("conv-"+ck) ;
-      if(!el){ el=document.createElement("div"); el.id="conv-"+ck; el.className="conv"; el.onclick=function(){ current=ck; renderSide(); renderThread(); }; side.appendChild(el); }
+      if(!el){ el=document.createElement("div"); el.id="conv-"+ck; el.onclick=function(){ current=ck; renderSide(); renderThread(); $("app").classList.add("open"); }; side.appendChild(el); }
       var lastMsg=null;
       for(var i=c.events.length-1;i>=0;i--){ if(c.events[i].kind!=="verdict"){ lastMsg=c.events[i]; break; } }
       el.className="conv"+(current===ck?" on":"");
       el.innerHTML="";
-      var p=document.createElement("div"); p.className="peer"; p.textContent=c.peer; el.appendChild(p);
-      var v=document.createElement("div"); v.className="prev"; v.textContent=lastMsg?lastMsg.text:"(no lines yet)"; el.appendChild(v);
-      var a=document.createElement("div"); a.className="as"; a.textContent="as "+c.agent; el.appendChild(a);
+      el.appendChild(avatar(c.peer));
+      var body=document.createElement("div"); body.className="body";
+      var top=document.createElement("div"); top.className="top";
+      var p=document.createElement("div"); p.className="peer"; p.textContent=c.peer; top.appendChild(p);
+      var vd=latestVerdict(c);
+      if(vd){ var bg=document.createElement("div"); bg.className="badge"; bg.textContent=parseVerdict(vd.text).stars||"\\u2764"; top.appendChild(bg); }
+      body.appendChild(top);
+      var v=document.createElement("div"); v.className="prev"; v.textContent=lastMsg?lastMsg.text:"(no lines yet)"; body.appendChild(v);
+      var a=document.createElement("div"); a.className="as"; a.textContent="you are "+c.agent; body.appendChild(a);
+      el.appendChild(body);
       side.appendChild(el);
     });
   }
 
   function renderThread(){
     var c=convos[current]; if(!c) return;
-    $("phead").textContent=c.peer+"  —  dating  "+c.agent;
+    var ph=$("phead"); ph.innerHTML="";
+    ph.appendChild(avatar(c.peer));
+    var meta=document.createElement("div");
+    var nm=document.createElement("div"); nm.className="h-nm"; nm.textContent=c.peer; meta.appendChild(nm);
+    var sub=document.createElement("div"); sub.className="h-sub"; sub.textContent="your date · you are "+c.agent; meta.appendChild(sub);
+    ph.appendChild(meta);
     var m=$("msgs"); m.innerHTML="";
     c.events.slice().sort(function(x,y){return (Date.parse(x.at||0)||0)-(Date.parse(y.at||0)||0)}).forEach(function(e){
       if(e.kind==="verdict"){
-        var card=document.createElement("div"); card.className="verdict"; card.textContent=e.text; m.appendChild(card); return;
+        var pv=parseVerdict(e.text);
+        var card=document.createElement("div"); card.className="verdict";
+        var st=document.createElement("div"); st.className="stars"; st.textContent=pv.stars||"\\u2764"; card.appendChild(st);
+        var vt=document.createElement("div"); vt.className="vtext"; vt.textContent=pv.head||e.text; card.appendChild(vt);
+        m.appendChild(card); return;
       }
       var mine = e.from===c.agent;
       var row=document.createElement("div"); row.className="row "+(mine?"out":"in");
       var b=document.createElement("div"); b.className="bubble";
-      var nm=document.createElement("div"); nm.className="nm"; nm.textContent=mine?e.from:e.from; b.appendChild(nm);
       b.appendChild(document.createTextNode(e.text));
       var tm=document.createElement("span"); tm.className="tm"; tm.textContent=hhmm(e.at); b.appendChild(tm);
       row.appendChild(b); m.appendChild(row);
@@ -511,8 +570,8 @@ const APP_HTML = `<!doctype html>
     $("gate").style.display="none"; $("app").style.display="block";
     var ids=Object.keys(owned);
     $("who").innerHTML="";
-    var lbl=document.createElement("span"); lbl.textContent="signed in: "+ids.join(", "); $("who").appendChild(lbl);
-    var out=document.createElement("button"); out.textContent="Log out";
+    var lbl=document.createElement("span"); lbl.className="pill"; lbl.textContent=ids.join(" · "); $("who").appendChild(lbl);
+    var out=document.createElement("button"); out.textContent="Sign out";
     out.onclick=function(){ sessionStorage.removeItem("datingAppAuth"); sses.forEach(function(s){try{s.close()}catch(e){}}); location.hash=""; location.reload(); };
     $("who").appendChild(out);
     for(var i=0;i<ids.length;i++){ await loadHistory(ids[i]); listenLive(ids[i]); }

@@ -103,8 +103,9 @@ test("view + history: scoped to the owner, wrong key 401", async () => {
 
 test("app + agents endpoints served", async () => {
   const app = await (await get("/app")).text();
-  assert.match(app, /Log in with your wallet/);
+  assert.match(app, /Sign in with wallet/);
   assert.match(app, /crypto\.subtle/);
+  assert.match(app, /hmacSha256/); // pure-JS fallback bundled for http contexts
   const ag = await (await get("/agents")).json();
   assert.ok(ag.agents.includes("a1"));
 });
