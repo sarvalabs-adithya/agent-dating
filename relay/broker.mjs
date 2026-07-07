@@ -27,6 +27,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import { createHmac } from "node:crypto";
 
 const PORT = Number(process.env.RELAY_PORT || 8787);
 const TOKEN = process.env.RELAY_TOKEN || "";
@@ -46,6 +47,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const HIST_FILE = path.join(DATA_DIR, "messages.jsonl");
 const KEYS_FILE = path.join(DATA_DIR, "viewkeys.json");
 const CARDS_FILE = path.join(DATA_DIR, "cards.json");
+const IKEYS_FILE = path.join(DATA_DIR, "inboxkeys.json");
 const HIST_MAX = 5000;
 
 function loadJsonMap(file) {
@@ -58,7 +60,37 @@ let history = [];
 try {
   history = fs.readFileSync(HIST_FILE, "utf8").split("\n").filter(Boolean).slice(-HIST_MAX)
     .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  // Compact on boot: rewrite the file to just the retained tail so the
+  // append-only log can't grow without bound across long uptimes.
+  fs.writeFileSync(HIST_FILE, history.map((e) => JSON.stringify(e)).join("\n") + (history.length ? "\n" : ""));
 } catch { /* first boot */ }
+
+// --- rate limiting --------------------------------------------------------
+// Small sliding-window limiters; enough to stop a curl loop from flooding
+// inboxes, brute-forcing view keys, or filling the disk. Tune via env.
+const RL_SEND_PER_IP = Number(process.env.RELAY_RL_SEND_IP || 120);      // /send per IP per minute
+const RL_SEND_PER_FROM = Number(process.env.RELAY_RL_SEND_FROM || 60);   // /send per sender id per minute
+const RL_AUTHFAIL_PER_IP = Number(process.env.RELAY_RL_AUTHFAIL || 30);  // failed auth probes per IP per minute
+const RL_STREAMS_PER_IP = Number(process.env.RELAY_RL_STREAMS || 40);    // concurrent SSE streams per IP
+const rlBuckets = new Map(); // key -> [timestamps]
+function overLimit(bucket, key, max, windowMs = 60_000) {
+  const now = Date.now();
+  const k = `${bucket}:${key}`;
+  let arr = rlBuckets.get(k);
+  if (!arr) { arr = []; rlBuckets.set(k, arr); }
+  while (arr.length && now - arr[0] > windowMs) arr.shift();
+  if (arr.length >= max) return true;
+  arr.push(now);
+  return false;
+}
+const ipStreams = new Map(); // ip -> live SSE count
+function clientIp(req) {
+  return String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() || req.socket?.remoteAddress || "?";
+}
+function tooMany(res, why) {
+  res.writeHead(429, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ ok: false, error: `rate limited (${why})` }));
+}
 
 /** agentId -> Set<ServerResponse> (an agent may hold more than one stream). */
 const inboxes = new Map();
@@ -131,6 +163,29 @@ function putViewKey(agent, key) {
 function viewAuthOk(agent, key) {
   const want = viewKeys.get(agent);
   return Boolean(want && key && key === want);
+}
+
+// --- inbox keys (identity binding) -----------------------------------------
+// The wallet-derived secret that says who may RECEIVE as an agent id (open its
+// /stream, evict its streams) and who may SEND as it (sign /send). Bound on
+// first claim (trust-on-first-use); rebinding requires the previous key. This
+// closes the "anyone can connect as your id and steal your inbox" hole for
+// every keyed agent; ids that never published a key keep the old open
+// behaviour so legacy plugins don't break.
+const inboxKeys = loadJsonMap(IKEYS_FILE); // agent id -> key
+function bindInboxKey(agent, key, old) {
+  const cur = inboxKeys.get(agent);
+  if (cur && cur !== key && old !== cur) return false; // rebind needs proof
+  if (cur !== key) {
+    inboxKeys.set(agent, key);
+    saveJsonMap(IKEYS_FILE, inboxKeys);
+    console.log(`relay: inbox key ${cur ? "rebound" : "bound"} for ${agent}`);
+  }
+  return true;
+}
+/** Canonical payload a message-auth tag signs: to|id|text (id "" if none). */
+function msgAuthTag(key, to, id, text) {
+  return createHmac("sha256", key).update(`${to}|${id == null ? "" : String(id)}|${text}`).digest("hex").slice(0, 32);
 }
 
 // --- live web view: tee every routed message to a browser feed ---------------
@@ -475,6 +530,23 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && url.pathname === "/stream") {
     const agent = url.searchParams.get("agent");
     if (!agent) { res.writeHead(400).end("agent required"); return; }
+    const ip = clientIp(req);
+    if ((ipStreams.get(ip) || 0) >= RL_STREAMS_PER_IP) { tooMany(res, "streams per ip"); return; }
+    // Identity binding: a keyed agent's stream may only be opened (and its
+    // predecessors evicted) by a holder of its inbox key. First presenter of
+    // a key binds it (TOFU). Keyless agents keep the legacy open behaviour.
+    const ikey = (url.searchParams.get("ikey") || "").trim();
+    const bound = inboxKeys.get(agent);
+    if (bound) {
+      if (ikey !== bound) {
+        if (overLimit("af", ip, RL_AUTHFAIL_PER_IP)) { tooMany(res, "auth failures"); return; }
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "inbox key required for this agent id" }));
+        return;
+      }
+    } else if (ikey) {
+      bindInboxKey(agent, ikey);
+    }
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
@@ -501,10 +573,44 @@ const server = http.createServer((req, res) => {
       inboxes.delete(agent);
     }
     addInbox(agent, res);
+    ipStreams.set(ip, (ipStreams.get(ip) || 0) + 1);
     const ping = setInterval(() => { try { res.write(": ping\n\n"); } catch { /* */ } }, 15000);
-    const close = () => { clearInterval(ping); removeInbox(agent, res); };
+    const close = () => {
+      clearInterval(ping);
+      removeInbox(agent, res);
+      const n = (ipStreams.get(ip) || 1) - 1;
+      if (n <= 0) ipStreams.delete(ip); else ipStreams.set(ip, n);
+    };
     req.on("close", close);
     req.on("error", close);
+    return;
+  }
+
+  // Bind/rotate an agent's inbox key. First claim binds; rebinding requires
+  // the previous key as `old` (proof of prior ownership).
+  if (req.method === "POST" && url.pathname === "/inboxkey") {
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 1 << 16) req.destroy(); });
+    req.on("end", () => {
+      let m;
+      try { m = JSON.parse(body); } catch { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "bad json" })); return; }
+      const agent = typeof m?.agent === "string" ? m.agent.trim() : "";
+      const key = typeof m?.key === "string" ? m.key.trim() : "";
+      const old = typeof m?.old === "string" ? m.old.trim() : "";
+      if (!agent || !key) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "expected { agent, key, old? }" }));
+        return;
+      }
+      if (!bindInboxKey(agent, key, old)) {
+        if (overLimit("af", clientIp(req), RL_AUTHFAIL_PER_IP)) { tooMany(res, "auth failures"); return; }
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "id already bound to a different key (pass the previous key as old)" }));
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    });
     return;
   }
 
@@ -544,6 +650,8 @@ const server = http.createServer((req, res) => {
 
   // Outbound: route a message to its target's inbox.
   if (req.method === "POST" && url.pathname === "/send") {
+    const ip = clientIp(req);
+    if (overLimit("send-ip", ip, RL_SEND_PER_IP)) { tooMany(res, "sends per ip"); return; }
     let body = "";
     req.on("data", (c) => { body += c; if (body.length > 1 << 20) req.destroy(); });
     req.on("end", () => {
@@ -552,6 +660,18 @@ const server = http.createServer((req, res) => {
       if (!m || typeof m.to !== "string" || typeof m.text !== "string") {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: "expected { to, text, from?, id?, kind? }" }));
+        return;
+      }
+      const fromId = String(m.from ?? "unknown");
+      if (overLimit("send-from", fromId, RL_SEND_PER_FROM)) { tooMany(res, "sends per sender"); return; }
+      // Sender authenticity: a keyed `from` must sign the message with its
+      // inbox key (auth = HMAC(key, to|id|text)) — nobody can send as a keyed
+      // agent without its wallet. Keyless senders pass (legacy plugins).
+      const senderKey = inboxKeys.get(fromId);
+      if (senderKey && m.auth !== msgAuthTag(senderKey, m.to, m.id ?? null, m.text)) {
+        if (overLimit("af", ip, RL_AUTHFAIL_PER_IP)) { tooMany(res, "auth failures"); return; }
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: `sender ${fromId} is key-bound — message auth tag missing or wrong` }));
         return;
       }
       const obj = {
@@ -585,6 +705,7 @@ const server = http.createServer((req, res) => {
     const key = (url.searchParams.get("key") || "").trim();
     if (agent) {
       if (!viewAuthOk(agent, key)) {
+        if (overLimit("probe", clientIp(req), 300)) { tooMany(res, "auth probes"); return; }
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: "bad or missing view key for that agent" }));
         return;
@@ -650,6 +771,9 @@ const server = http.createServer((req, res) => {
     const agent = (url.searchParams.get("agent") || "").trim();
     const key = (url.searchParams.get("key") || "").trim();
     if (!agent || !viewAuthOk(agent, key)) {
+      // Generous window: the app's wallet login legitimately probes every
+      // public id (all but the owner's fail). This bounds floods, not logins.
+      if (overLimit("probe", clientIp(req), 300)) { tooMany(res, "auth probes"); return; }
       res.writeHead(401, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: false, error: "bad or missing view key for that agent" }));
       return;

@@ -24,11 +24,20 @@ interface Pending {
   timer: ReturnType<typeof setTimeout>;
 }
 
+import { createHmac } from "node:crypto";
+
+/** Canonical string every message-auth tag signs: to|id|text (id "" if none). */
+function authPayload(to: string, id: string | null | undefined, text: string): string {
+  return `${to}|${id == null ? "" : String(id)}|${text}`;
+}
+
 export class RelayClient {
   private pending = new Map<string, Pending>();
   private closers: Array<() => void> = [];
   private seq = 0;
   private closed = false;
+  /** Inbox keys for MY ids — presented on /stream and used to sign outbound. */
+  private inboxKeys = new Map<string, string>();
 
   constructor(
     private brokerUrl: string,
@@ -42,8 +51,14 @@ export class RelayClient {
     return this.token ? { "X-Relay-Token": this.token } : {};
   }
 
-  /** Open an inbox for one of MY ids; inbound flirts (kind:"msg") go to onMsg. */
-  listen(agentId: string, onMsg: (m: RelayInbound) => void): () => void {
+  /**
+   * Open an inbox for one of MY ids; inbound flirts (kind:"msg") go to onMsg.
+   * `inboxKey` (wallet-derived secret) authenticates this stream to the broker
+   * — once an id is bound to a key, only holders of that key can listen as it
+   * (or evict its streams), and outbound messages are signed with it.
+   */
+  listen(agentId: string, onMsg: (m: RelayInbound) => void, inboxKey?: string): () => void {
+    if (inboxKey) this.inboxKeys.set(agentId, inboxKey);
     let stop = false;
     // Abort the in-flight stream on close so a replaced client dies NOW, not at
     // the next broker ping — a lingering "closed" listener that still answers
@@ -60,7 +75,8 @@ export class RelayClient {
       while (!stop && !this.closed) {
         try {
           aborter = new AbortController();
-          const q = `agent=${encodeURIComponent(agentId)}${this.token ? `&token=${encodeURIComponent(this.token)}` : ""}`;
+          const ik = this.inboxKeys.get(agentId);
+          const q = `agent=${encodeURIComponent(agentId)}${ik ? `&ikey=${encodeURIComponent(ik)}` : ""}${this.token ? `&token=${encodeURIComponent(this.token)}` : ""}`;
           const res = await fetch(`${this.brokerUrl}/stream?${q}`, { headers: this.authHeaders(), signal: aborter.signal });
           if (!res.ok || !res.body) throw new Error(`stream HTTP ${res.status}`);
           backoff = BASE_MS; // connected cleanly — reset the ladder
@@ -159,13 +175,38 @@ export class RelayClient {
     }
   }
 
+  /**
+   * Publish/bind the inbox key for one of MY ids on the broker. Overwriting an
+   * established binding requires the previous key (proof of ownership).
+   */
+  async putInboxKey(agent: string, key: string, oldKey?: string): Promise<boolean> {
+    this.inboxKeys.set(agent, key);
+    try {
+      const res = await fetch(`${this.brokerUrl}/inboxkey`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...this.authHeaders() },
+        body: JSON.stringify({ agent, key, ...(oldKey ? { old: oldKey } : {}) }),
+      });
+      return res.ok;
+    } catch (e: any) {
+      this.log(`relay inbox-key publish for ${agent} failed: ${e?.message || e}`);
+      return false;
+    }
+  }
+
   /** Fire-and-forget send. Returns false if the peer isn't connected. */
   async post(msg: { to: string; from: string; id?: string | null; kind: "msg" | "reply" | "verdict"; text: string }): Promise<boolean> {
     try {
+      // Sign with the sender id's inbox key (when we hold one) so the broker
+      // can reject spoofed `from` fields on keyed agents.
+      const ik = this.inboxKeys.get(msg.from);
+      const auth = ik
+        ? createHmac("sha256", ik).update(authPayload(msg.to, msg.id, msg.text)).digest("hex").slice(0, 32)
+        : undefined;
       const res = await fetch(`${this.brokerUrl}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...this.authHeaders() },
-        body: JSON.stringify(msg),
+        body: JSON.stringify(auth ? { ...msg, auth } : msg),
       });
       return res.ok;
     } catch (e: any) {

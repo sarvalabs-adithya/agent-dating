@@ -113,6 +113,15 @@ const DatingConfigSchema = Type.Object(
     datingAgentId: Type.Optional(
       Type.String({ description: "Which local agent answers dates when useAgentBrain is on (`openclaw agent --agent <id>`). Default 'main'." }),
     ),
+    maxBrainRepliesPerHour: Type.Optional(
+      Type.Number({ description: "Cost guard: max INBOUND flirts answered with the real LLM per hour, across all peers (default 60). Beyond it, replies fall back to the free persona brain — the date continues, your key stops burning." }),
+    ),
+    maxBrainRepliesPerPeerPerHour: Type.Optional(
+      Type.Number({ description: "Cost guard: max LLM replies per single peer per hour (default 20). A spammy suitor gets persona replies, not your API budget." }),
+    ),
+    blockedPeers: Type.Optional(
+      Type.String({ description: "Comma-separated agent ids whose inbound flirts are DROPPED without a reply (no LLM turn, no log line in the date view)." }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -133,6 +142,9 @@ interface DatingConfig {
   useAgentBrain?: boolean;
   openclawBin?: string;
   datingAgentId?: string;
+  maxBrainRepliesPerHour?: number;
+  maxBrainRepliesPerPeerPerHour?: number;
+  blockedPeers?: string;
 }
 
 // A tiny monotonic-ish message id source. Date.now()/Math.random() are fine in
@@ -249,6 +261,12 @@ export default definePluginEntry({
     const normalizeMnemonic = (m: string): string => m.trim().toLowerCase().split(/\s+/).join(" ");
     const viewKeyFor = (agentId: string, mnemonic: string): string =>
       createHmac("sha256", normalizeMnemonic(mnemonic)).update(`dating-view:${agentId}`).digest("hex").slice(0, 32);
+    // Inbox key: authenticates this agent's relay STREAM (who may receive as
+    // this id / evict its streams) and signs its outbound messages (who may
+    // send as it). Separate secret from the view key — the view key rides in
+    // shareable URLs; this one never leaves plugin↔broker calls.
+    const inboxKeyFor = (agentId: string, mnemonic: string): string =>
+      createHmac("sha256", normalizeMnemonic(mnemonic)).update(`dating-inbox:${agentId}`).digest("hex").slice(0, 32);
     const publishViewLink = async (agentId: string, mnemonic: string): Promise<string | undefined> => {
       const base = relayUrlCfg();
       if (!relay || !base) return undefined;
@@ -268,10 +286,11 @@ export default definePluginEntry({
       history.push({ who: name, line: text });
 
       let line: string;
-      if (config().useAgentBrain) {
+      if (config().useAgentBrain && brainBudgetOk(fromId)) {
         // Answer with THIS gateway's real agent, in a per-date session, so it
         // knows it's dating and replies as itself. Fall back to flirt.ts on any
-        // failure so a date never dead-ends.
+        // failure so a date never dead-ends. brainBudgetOk is the cost guard:
+        // beyond the hourly caps the persona answers instead of the LLM.
         try {
           // `openclaw agent` needs an explicit --agent target, and the session
           // key must be scoped to it (agent:<id>:...) or the gateway rejects the
@@ -289,6 +308,7 @@ export default definePluginEntry({
           line = await nextFlirtLine(history, myPersona());
         }
       } else {
+        if (config().useAgentBrain) console.warn(`agent-dating: brain reply budget reached for ${fromId} — answering with the persona brain (free).`);
         line = await nextFlirtLine(history, myPersona());
       }
       history.push({ who: selfName(), line });
@@ -402,23 +422,55 @@ export default definePluginEntry({
       if (seenMsgOrder.length > 500) seenMsgIds.delete(seenMsgOrder.shift()!);
       return false;
     };
+    // ---- Inbound abuse guards (the receiver pays for LLM replies) ----------
+    // Dropped peers: their lines never reach the brain, the log, or the view.
+    const isBlockedPeer = (id: string): boolean =>
+      (config().blockedPeers || "").split(",").map((s) => s.trim()).filter(Boolean).includes(id);
+    // Sliding-hour budgets for INBOUND real-LLM replies. Beyond the caps the
+    // date continues on the free persona brain — a spammy suitor can't drain
+    // this operator's API key. Outbound (dating_date) is not budgeted: that
+    // cost is the owner's own choice.
+    const brainSpend = { global: [] as number[], perPeer: new Map<string, number[]>() };
+    const brainBudgetOk = (peer: string): boolean => {
+      const now = Date.now();
+      const HOUR = 3_600_000;
+      const gMax = Math.max(0, config().maxBrainRepliesPerHour ?? 60);
+      const pMax = Math.max(0, config().maxBrainRepliesPerPeerPerHour ?? 20);
+      const g = brainSpend.global;
+      while (g.length && now - g[0] > HOUR) g.shift();
+      let p = brainSpend.perPeer.get(peer);
+      if (!p) { p = []; brainSpend.perPeer.set(peer, p); }
+      while (p.length && now - p[0] > HOUR) p.shift();
+      if (g.length >= gMax || p.length >= pMax) return false;
+      g.push(now);
+      p.push(now);
+      return true;
+    };
+
     // Start listening on the relay for one of THIS agent's ids. Idempotent, and
     // callable AFTER startup — so a freshly-registered agent becomes reachable
     // over the relay immediately, without waiting for a gateway restart.
-    const attachInbox = (id: string): void => {
+    // `inboxKey` binds the stream to this wallet on the broker: strangers can
+    // no longer connect as this id and evict/intercept its inbox.
+    const attachInbox = (id: string, inboxKey?: string): void => {
       if (!relay || !id || listenedIds.has(id)) return;
       listenedIds.add(id);
       if (!myRelayId) myRelayId = id;
+      if (inboxKey) void relay.putInboxKey(id, inboxKey);
       relay.listen(id, (m) => {
         void (async () => {
           if (alreadyAnswered(m.id)) return;
+          if (isBlockedPeer(m.from)) {
+            console.warn(`agent-dating: dropped inbound line from blocked peer ${m.from}`);
+            return;
+          }
           const line = await replyTo(m.from, m.text);
           const ok = await relay!.post({ to: m.from, from: m.to, id: m.id, kind: "reply", text: line });
           // A reply the broker can't deliver is a date silently dying on the
           // other side — make it loud so the logs name the failing hop.
           if (!ok) console.warn(`agent-dating: reply to ${m.from} was NOT delivered — their inbox stream is gone from the relay (id ${m.id ?? "none"})`);
         })();
-      });
+      }, inboxKey);
     };
 
     const relayReady = (async () => {
@@ -452,12 +504,13 @@ export default definePluginEntry({
         const explicit = (config().relayId || process.env.DATING_RELAY_ID || "")
           .split(",").map((s) => s.trim()).filter(Boolean);
         let ids: string[] = explicit;
+        let bootCreds: { mnemonic: string; derivationPath?: string } | null = null;
+        try { bootCreds = resolveCreds(); } catch { /* no mnemonic yet → attach on register */ }
         if (!ids.length) {
-          let creds;
-          try { creds = resolveCreds(); } catch { return; } // no mnemonic yet → attach on register
-          ids = await getMyAgentIds(creds);
+          if (!bootCreds) return;
+          ids = await getMyAgentIds(bootCreds);
         }
-        for (const id of ids) attachInbox(id);
+        for (const id of ids) attachInbox(id, bootCreds ? inboxKeyFor(id, bootCreds.mnemonic) : undefined);
         // Identify outbound as the NEWEST registration (the id this agent
         // advertises), not whichever id happened to attach first — otherwise a
         // wallet with old registrations flirts as a stale identity (agent_19
@@ -543,7 +596,7 @@ export default definePluginEntry({
             // (its on-chain card_uri points at our /moi/card.json route).
             stashSelfCard({ displayName: params.displayName, bio: params.bio, agentUrl: agentBaseUrl() });
             await relayReady;
-            attachInbox(existing.agentId);
+            attachInbox(existing.agentId, inboxKeyFor(existing.agentId, creds.mnemonic));
             myRelayId = existing.agentId; // outgoing flirts identify as the advertised id
             // Publish the card on the broker too, so peers whose direct fetch of
             // our card_uri fails (we're NAT'd/walled) can still discover us.
@@ -575,7 +628,7 @@ export default definePluginEntry({
         });
         // Become reachable on the relay under the NEW id right away (no restart).
         await relayReady;
-        attachInbox(agentId);
+        attachInbox(agentId, inboxKeyFor(agentId, creds.mnemonic));
         myRelayId = agentId; // the fresh registration is now this agent's identity
         // Publish the card on the broker (keyed by id AND wallet) so peers can
         // discover us even when our own card_uri isn't reachable (NAT/walled).
@@ -989,6 +1042,11 @@ export default definePluginEntry({
         if (!parsed) {
           res.statusCode = 400;
           res.end(JSON.stringify({ error: "expected JSON body { from, text }" }));
+          return true;
+        }
+        if (isBlockedPeer(parsed.from)) {
+          res.statusCode = 403;
+          res.end(JSON.stringify({ error: "not interested" }));
           return true;
         }
 

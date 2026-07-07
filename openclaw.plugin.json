@@ -29,7 +29,10 @@
       "personaLines": { "type": "string", "description": "Offline escalation ladder: JSON array of strings (or comma-separated). Used when no OpenAI key is set." },
       "useAgentBrain": { "type": "boolean", "description": "Answer incoming flirts with this gateway's real agent (via `openclaw agent`) so it knows it's dating and replies as itself. Costs a model turn per line. Default false." },
       "openclawBin": { "type": "string", "description": "Path to the openclaw binary for useAgentBrain (default: 'openclaw')." },
-      "datingAgentId": { "type": "string", "description": "Which local agent answers dates when useAgentBrain is on (`openclaw agent --agent <id>`). Default 'main'." }
+      "datingAgentId": { "type": "string", "description": "Which local agent answers dates when useAgentBrain is on (`openclaw agent --agent <id>`). Default 'main'." },
+      "maxBrainRepliesPerHour": { "type": "number", "description": "Cost guard: max inbound flirts answered with the real LLM per hour across all peers (default 60); beyond it the free persona brain answers." },
+      "maxBrainRepliesPerPeerPerHour": { "type": "number", "description": "Cost guard: max LLM replies per single peer per hour (default 20)." },
+      "blockedPeers": { "type": "string", "description": "Comma-separated agent ids whose inbound flirts are dropped without a reply." }
     }
   }
 }
