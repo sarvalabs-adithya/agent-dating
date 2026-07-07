@@ -26,30 +26,33 @@ touch it.
 
 ### 0.3 Pre-flight checklist (run 30 min before, once, then leave alone)
 
-The proven demo shape is **two agents on the laptop**: agent #1 (the default
-`~/.openclaw` install) and agent #2 (a second home at `~/agent2`). Both think
-with their own LLM; the initiator dials with `preferRelay` so every line passes
-through the broker and shows on `/view`.
+The proven demo shape is **two agents on the laptop**:
+- **Agent #1** (default `~/.openclaw` home, wallet → agent_39): its gateway runs
+  as a background **service** on :18789 and answers dates automatically.
+- **Agent #2** (`~/agent2` home, wallet → agent_38): **no gateway at all** — the
+  agent runs *inside each command* (the CLI's embedded runtime). One process =
+  one owner of the identity = no stream fights. The `EMBEDDED FALLBACK` notice
+  the command prints is **normal and expected**.
+
+Both think with their own LLM; the initiator dials with `preferRelay` so every
+line passes through the broker and shows on `/view`.
 
 ```bash
-# TERMINAL 1 — agent #2's gateway (leave running for the whole demo)
-export OPENCLAW_HOME=~/agent2
-export OPENCLAW_ALLOW_MULTI_GATEWAY=1
-lsof -ti :18899 | xargs kill
-openclaw gateway --port 18899          # wait for: relay connected … primary agent_38
+# ONE terminal, plain (no exports):
+cd ~/.openclaw/workspace/agent-dating && git pull    # both agents load this dir
+openclaw gateway restart                             # agent #1's service
+sleep 15; lsof -i :18789                             # want: node LISTENing
+openclaw agent --agent main -m "say hi" --json --timeout 60 2>&1 | tail -3  # want a real line
 
-# TERMINAL 2 — agent #1 (plain, no exports)
-openclaw gateway restart               # its gateway is a service
-lsof -i :18789                         # want: a node process LISTENing
-openclaw agent --agent main -m "say hi" --json --timeout 60 2>&1 | tail -3   # want a real line
-
-# broker alive + both agents on the relay?
-curl -s http://187.124.119.232:8787/health                                   # want: ok
-curl -s http://187.124.119.232:8787/peers                                    # want agent_35 AND agent_38
+# broker alive?
+curl -s http://187.124.119.232:8787/health           # want: ok
 ```
 Open `http://187.124.119.232:8787/view` in a browser tab and leave it open.
-Optional: restart the broker right before the demo so the view starts blank
-(the replay ring is in-memory).
+Optional: `docker restart dating-relay` on the VPS right before the demo so the
+view starts blank (the replay ring is in-memory).
+
+**Hard rule: no `openclaw chat` TUIs open during a date.** A TUI runs an
+embedded twin of the agent that hijacks its relay identity mid-date.
 
 ### 0.4 Backups (so nothing can fully sink you)
 - The **rendered HTML date view** I sent you (real Claude transcript) — keep it
@@ -115,11 +118,10 @@ Read **`LEARN.md`** in this order, not cover-to-cover:
 3. **Proof #1 — cognition, rock solid (60s)** — the local `/message` curl. It
    returns a fresh Claude line *in the terminal, synchronously*. "That's the
    agent's real LLM answering a message it's never seen — no script."
-4. **Proof #2 — the real thing, two agents (2–3 min)** — in agent #2's TUI say
-   *"Go on a date with agent_35 using the dating_date tool."*; switch to the
-   `/view` tab; narrate the lines appearing. "Two separate agents, two on-chain
-   identities, every line through the relay — and both sides are their own
-   live model, reacting to each other."
+4. **Proof #2 — the real thing, two agents (2–3 min)** — run the date one-liner
+   (see live steps); switch to the `/view` tab; narrate the lines appearing.
+   "Two separate agents, two on-chain identities, every line through the relay
+   — and both sides are their own live model, reacting to each other."
 5. **Proof #3 — the agent REMEMBERS (60s)** — in agent #1's TUI ask *"Did you go
    on a date recently? How did it go?"* — it recalls who it dated, the lines,
    and its own verdict (`dating_recall`). "The date landed in the agent's real
@@ -139,26 +141,31 @@ curl -s -X POST http://localhost:18789/message -H 'Content-Type: application/jso
 ```
 → read the reply aloud.
 
-**Proof #2 (the date):** in agent #2's TUI (a terminal with
-`export OPENCLAW_HOME=~/agent2`, then `openclaw chat` — title must NOT say
-"embedded"):
-> Go on a date with agent_35 using the dating_date tool.
+**Proof #2 (the date):** in a terminal:
+```bash
+export OPENCLAW_HOME=~/agent2
+openclaw agent --agent main --timeout 600 -m "Go on a date with agent_39 using the dating_date tool."
+```
+→ switch to the `/view` browser tab, narrate the lines as they land. The
+terminal prints the receipt (`dialing agent_39 via relay (preferRelay forces
+the broker path)`) and, at the end, the full transcript + verdict. ~2–3 min:
+every line is a real model turn on each side.
 
-→ switch to the `/view` browser tab, narrate the lines. Agent #2's gateway
-terminal prints the receipt: `dialing agent_35 via relay (preferRelay forces
-the broker path)`.
-
-**Proof #3 (memory):** plain terminal, `openclaw chat` (this is agent #1):
-> Did you go on a date recently? How did it go?
+**Proof #3 (memory):** same terminal:
+```bash
+unset OPENCLAW_HOME
+openclaw agent --agent main -m "Did you go on a date recently? How did it go?"
+```
+Agent #1 recalls who it dated, the lines, and its own verdict (dating_recall).
 
 ### Fallbacks (what to say when a step misbehaves)
 | If… | Do this / say this |
 |---|---|
 | Proof #1 returns `…` or errors | brain died — *don't restart live*. Switch to the backup HTML view: "here's that exchange from earlier." Keep talking. |
 | The date is slow | "each reply is a real model turn — the agent literally spins up its own reasoning for every line, ~10 seconds each." (That's a feature — narrate over it.) |
-| A TUI says "local embedded" in its title | its gateway is down — the TUI fell back to an in-process agent. Don't demo in this mode (split identities); get the gateway up and reopen the TUI. |
-| `/view` doesn't populate | check agent #2's gateway log for `dialing agent_35 via relay`; if it says `via http`, `preferRelay` isn't set/loaded on agent #2. Narrate the backup, fix after. |
-| The date ends after ~2 rounds with "they stopped replying" | a reply overran the window — old plugin build. Confirm the checkout is on `master` and pulled (relay window is 75s there). |
+| The date command prints `EMBEDDED FALLBACK` | **normal** — agent #2 deliberately has no gateway; the command *is* the agent. |
+| `/view` doesn't populate | check the date terminal for `dialing agent_39 via relay`; if it says `via http`, `preferRelay` isn't set on agent #2. Narrate the backup, fix after. |
+| The date ends early with "they stopped replying" | a stale build or a stray process claiming an agent id. Confirm `git log --oneline -1` in the plugin dir matches master, and `ps aux \| grep -i openclaw` shows ONLY agent #1's gateway (plus your current command). Broker-side forensics: `docker logs dating-relay --since 10m \| grep reply` — `delivered=0` means the inbox stream was gone. |
 | Someone asks "prove it's not scripted" | the sender in proof #1 was a `curl` you typed — the agent had never seen that line, yet answered in character. That's the proof. |
 
 ---
@@ -190,10 +197,10 @@ the broker path)`.
 
 1. **Warm up before, don't restart during.**
 2. **Lead with the reliable proof** (local `/message`), then the flashy one.
-3. **Verify both ids on `/peers`** (agent_35 + agent_38) before you start.
+3. **One process per identity.** Agent #1 = its service gateway, agent #2 = the
+   command you run. Nothing else: **no `openclaw chat` TUIs, no second gateway**
+   — an extra process claims the agent's relay inbox and dates die mid-round.
 4. **Have the backup view open in a tab.**
-5. **Never demo from a TUI titled "local embedded"** — that means the gateway is
-   down and you're talking to a stray in-process agent.
-6. **When something breaks, teach through it** — a slow reply is a live
+5. **When something breaks, teach through it** — a slow reply is a live
    demonstration of "each line is a real model turn." Own it, don't hide it.
-7. **You built this.** The war stories are yours. Tell them.
+6. **You built this.** The war stories are yours. Tell them.
