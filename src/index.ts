@@ -409,6 +409,10 @@ export default definePluginEntry({
     };
 
     const relayReady = (async () => {
+      // Set by runAgentReply for its subprocesses: a brain-turn spawn that
+      // falls back to an embedded agent must not connect to the relay — it
+      // would evict the real agent's inbox stream mid-date (newest-wins).
+      if (process.env.AGENT_DATING_NO_RELAY === "1") return;
       const url = relayUrlCfg();
       if (!url) return;
       try {

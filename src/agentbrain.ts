@@ -40,7 +40,14 @@ export async function runAgentReply(message: string, opts: AgentBrainOpts): Prom
   if (opts.agentId) args.push("--agent", opts.agentId);
 
   return await new Promise<string>((resolve, reject) => {
-    const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
+    // AGENT_DATING_NO_RELAY: if this spawn can't reach the gateway and falls
+    // back to an embedded agent, that embedded copy must NOT load the relay —
+    // it would claim this agent's inbox id and evict the caller's stream
+    // (newest-wins), losing the very reply the date is waiting on.
+    const child = spawn(bin, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, AGENT_DATING_NO_RELAY: "1" },
+    });
     let out = "";
     let err = "";
     const killer = setTimeout(() => {
