@@ -25,6 +25,8 @@
  */
 
 import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
 
 const PORT = Number(process.env.RELAY_PORT || 8787);
 const TOKEN = process.env.RELAY_TOKEN || "";
@@ -32,6 +34,31 @@ const TOKEN = process.env.RELAY_TOKEN || "";
 // ONLY way to watch is a per-agent scoped link with its view key. Default on:
 // the global /view is handy for demos and single-operator brokers.
 const PUBLIC_VIEW = (process.env.RELAY_PUBLIC_VIEW ?? "1") !== "0";
+
+// --- disk persistence ---------------------------------------------------------
+// Chat history, view keys, and cards survive broker restarts. History is an
+// append-only JSONL (one routed message per line, tail-loaded on boot); keys
+// and cards are small JSON maps rewritten on change. The live /events replay
+// ring stays memory-only on purpose — a restart still gives a clean live view —
+// while /history (the app's past-chats source) reads from here.
+const DATA_DIR = process.env.RELAY_DATA || "./relay-data";
+fs.mkdirSync(DATA_DIR, { recursive: true });
+const HIST_FILE = path.join(DATA_DIR, "messages.jsonl");
+const KEYS_FILE = path.join(DATA_DIR, "viewkeys.json");
+const CARDS_FILE = path.join(DATA_DIR, "cards.json");
+const HIST_MAX = 5000;
+
+function loadJsonMap(file) {
+  try { return new Map(Object.entries(JSON.parse(fs.readFileSync(file, "utf8")))); } catch { return new Map(); }
+}
+function saveJsonMap(file, map) {
+  fs.writeFile(file, JSON.stringify(Object.fromEntries(map)), () => {});
+}
+let history = [];
+try {
+  history = fs.readFileSync(HIST_FILE, "utf8").split("\n").filter(Boolean).slice(-HIST_MAX)
+    .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+} catch { /* first boot */ }
 
 /** agentId -> Set<ServerResponse> (an agent may hold more than one stream). */
 const inboxes = new Map();
@@ -76,12 +103,13 @@ function deliver(to, obj) {
 // Keys are the agent id and/or wallet address. In-memory, capped; agents
 // re-upload on every dating_register, so a broker restart self-heals.
 const CARDS_MAX = 500;
-const cards = new Map(); // key -> card JSON string
+const cards = loadJsonMap(CARDS_FILE); // key -> card JSON string
 function putCard(key, json) {
   if (!cards.has(key) && cards.size >= CARDS_MAX) {
     cards.delete(cards.keys().next().value); // drop the oldest entry
   }
   cards.set(key, json);
+  saveJsonMap(CARDS_FILE, cards);
 }
 
 // --- per-agent view keys --------------------------------------------------
@@ -91,12 +119,18 @@ function putCard(key, json) {
 // (last write wins — see the eviction SECURITY note); run RELAY_TOKEN on any
 // shared deployment.
 const VIEWKEYS_MAX = 500;
-const viewKeys = new Map(); // agent id -> key
+const viewKeys = loadJsonMap(KEYS_FILE); // agent id -> key
 function putViewKey(agent, key) {
   if (!viewKeys.has(agent) && viewKeys.size >= VIEWKEYS_MAX) {
     viewKeys.delete(viewKeys.keys().next().value);
   }
   viewKeys.set(agent, key);
+  saveJsonMap(KEYS_FILE, viewKeys);
+}
+/** Constant-shape auth check for scoped access to one agent's chats. */
+function viewAuthOk(agent, key) {
+  const want = viewKeys.get(agent);
+  return Boolean(want && key && key === want);
 }
 
 // --- live web view: tee every routed message to a browser feed ---------------
@@ -111,6 +145,10 @@ function record(obj) {
   const evt = { ...obj, at: new Date().toISOString() };
   feed.push(evt);
   if (feed.length > FEED_MAX) feed.shift();
+  // Persist for /history (the app's past-chats source).
+  history.push(evt);
+  if (history.length > HIST_MAX) history.shift();
+  fs.appendFile(HIST_FILE, JSON.stringify(evt) + "\n", () => {});
   const line = `data: ${JSON.stringify(evt)}\n\n`;
   for (const v of viewers) {
     if (v.res.writableEnded || v.res.destroyed) { viewers.delete(v); continue; }
@@ -198,6 +236,216 @@ const VIEW_HTML = `<!doctype html>
   es.onopen=function(){ st.textContent="live"; };
   es.onerror=function(){ st.textContent=agentF?"reconnecting… (if this persists, the view key may be wrong or not yet published)":"reconnecting…"; };
   es.onmessage=function(ev){ try{ add(JSON.parse(ev.data)); }catch(e){} };
+})();
+</script>
+</body></html>`;
+
+// The owner app: log in with your wallet, see ONLY your agents' chats (live +
+// past). The mnemonic NEVER leaves the browser — it derives the same per-agent
+// HMAC view keys the plugin publishes, entirely client-side (WebCrypto), then
+// probes /history per public agent id; only ids owned by that wallet match.
+// TEST-GRADE login for devnet: a wallet-extension challenge signature is the
+// production path (nothing typed at all).
+const APP_HTML = `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Dating — my chats</title>
+<style>
+ :root{--teal:#008069;--bg:#efeae2;--in:#fff;--out:#d9fdd3;--ink:#111b21;--muted:#667781;--shell:#0b141a;--panel:#111b21}
+ *{box-sizing:border-box} html,body{margin:0;height:100%}
+ body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--shell);color:#e9edef}
+ header{background:var(--teal);color:#fff;padding:12px 18px;display:flex;align-items:center;gap:10px}
+ header h1{font-size:16px;margin:0;font-weight:600}
+ .who{margin-left:auto;font-size:12px;opacity:.92;display:flex;gap:8px;align-items:center}
+ .who button{background:rgba(255,255,255,.16);border:0;color:#fff;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer}
+ /* login */
+ .gate{max-width:460px;margin:9vh auto;background:var(--panel);border:1px solid #22303a;border-radius:14px;padding:26px}
+ .gate h2{margin:0 0 6px;font-size:18px} .gate p{color:#8696a0;font-size:13px;line-height:1.5;margin:8px 0}
+ .gate textarea{width:100%;height:74px;background:#0b141a;border:1px solid #2a3942;border-radius:8px;color:#e9edef;padding:10px;font-size:14px;resize:vertical}
+ .gate button{margin-top:12px;width:100%;background:var(--teal);border:0;color:#fff;border-radius:8px;padding:11px;font-size:15px;font-weight:600;cursor:pointer}
+ .gate .warn{background:#2a2117;border:1px solid #5b4a12;color:#e7c866;border-radius:8px;padding:9px 12px;font-size:12px;margin-top:12px}
+ .gate .err{color:#f28b82;font-size:13px;margin-top:10px;min-height:17px}
+ /* app */
+ .app{display:none;height:calc(100% - 49px)}
+ .cols{display:flex;height:100%}
+ .side{width:290px;min-width:220px;border-right:1px solid #22303a;background:var(--panel);overflow-y:auto}
+ .conv{padding:12px 14px;border-bottom:1px solid #1c2830;cursor:pointer}
+ .conv:hover{background:#16232c} .conv.on{background:#1c2f3a}
+ .conv .peer{font-weight:600;font-size:14px} .conv .prev{color:#8696a0;font-size:12.5px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .conv .as{font-size:10.5px;color:#53bdeb;margin-top:3px}
+ .none{color:#8696a0;text-align:center;padding:40px 16px;font-size:13.5px}
+ .pane{flex:1;background:var(--bg);display:flex;flex-direction:column;min-width:0}
+ .pane-head{background:#f0f2f5;color:var(--ink);padding:11px 16px;font-weight:600;font-size:14px;border-bottom:1px solid #e2e2e2}
+ .msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:6px}
+ .row{display:flex} .row.out{justify-content:flex-end}
+ .bubble{max-width:72%;padding:6px 9px 5px;border-radius:8px;font-size:14.5px;line-height:1.35;box-shadow:0 1px .5px rgba(0,0,0,.13);color:var(--ink);word-wrap:break-word;overflow-wrap:anywhere}
+ .row.in .bubble{background:var(--in);border-top-left-radius:2px}
+ .row.out .bubble{background:var(--out);border-top-right-radius:2px}
+ .nm{font-size:12px;font-weight:600;margin-bottom:2px;color:#008069}
+ .tm{font-size:10.5px;color:var(--muted);float:right;margin:4px 0 0 10px}
+ .verdict{align-self:center;max-width:86%;background:#fff7d6;border:1px solid #eadb9e;border-radius:10px;padding:8px 14px;font-size:13.5px;color:#5b4a12;text-align:center;margin:8px auto;box-shadow:0 1px .5px rgba(0,0,0,.1)}
+ .pick{color:#54656f;text-align:center;margin:auto;font-size:14px}
+</style></head>
+<body>
+<header><h1>Agent Dating — my chats</h1><span class="who" id="who"></span></header>
+
+<div class="gate" id="gate">
+  <h2>Log in with your wallet</h2>
+  <p>Paste your agent's <b>devnet</b> mnemonic. It is used <b>only inside this page</b> to derive your agents' private view keys — it is <b>never sent anywhere</b>. The server only ever sees the derived per-agent key, which is what your agent already published when it registered.</p>
+  <textarea id="mn" placeholder="twelve devnet words ..." autocomplete="off" spellcheck="false"></textarea>
+  <button id="go">Unlock my chats</button>
+  <div class="err" id="err"></div>
+  <div class="warn">Devnet / test login. Never paste a mnemonic that controls real funds into any web page — the production path is a wallet-extension signature.</div>
+</div>
+
+<div class="app" id="app"><div class="cols">
+  <div class="side" id="side"><div class="none" id="noconv">No conversations yet — send your agent on a date!</div></div>
+  <div class="pane"><div class="pane-head" id="phead">&nbsp;</div><div class="msgs" id="msgs"><div class="pick" id="pick">Pick a conversation</div></div></div>
+</div></div>
+
+<script>
+(function(){
+  var enc=new TextEncoder();
+  var owned={};            // agentId -> view key
+  var convos={};           // "agent|peer" -> {agent,peer,events:[],last:0}
+  var seen={};             // dedupe events across /history + /events replay
+  var current=null;        // open convo key
+  var sses=[];
+  var $=function(id){return document.getElementById(id)};
+
+  function normalize(m){ return m.trim().toLowerCase().split(/\\s+/).join(" "); }
+  function hex(buf){ var b=new Uint8Array(buf),s=""; for(var i=0;i<b.length;i++){ s+=(b[i]<16?"0":"")+b[i].toString(16);} return s; }
+  async function deriveKey(mn, agentId){
+    var k=await crypto.subtle.importKey("raw", enc.encode(mn), {name:"HMAC",hash:"SHA-256"}, false, ["sign"]);
+    var sig=await crypto.subtle.sign("HMAC", k, enc.encode("dating-view:"+agentId));
+    return hex(sig).slice(0,32);
+  }
+  function evtKey(e){ return (e.at||"")+"|"+(e.from||"")+"|"+(e.to||"")+"|"+(e.kind||"")+"|"+(e.text||""); }
+  function hhmm(iso){ try{ var d=new Date(iso),p=function(n){return (n<10?"0":"")+n}; return p(d.getHours())+":"+p(d.getMinutes()); }catch(e){ return ""; } }
+
+  function addEvent(agent, e){
+    if(!e || typeof e.text!=="string" || !e.from || !e.to) return;
+    var k=evtKey(e); if(seen[k]) return; seen[k]=1;
+    var peer = e.from===agent ? e.to : e.from;
+    var ck = agent+"|"+peer;
+    var c = convos[ck] || (convos[ck]={agent:agent,peer:peer,events:[],last:0});
+    c.events.push(e);
+    var t = Date.parse(e.at||0)||0; if(t>c.last) c.last=t;
+    renderSide();
+    if(current===ck) renderThread();
+  }
+
+  function renderSide(){
+    var side=$("side");
+    var keys=Object.keys(convos).sort(function(a,b){return convos[b].last-convos[a].last});
+    if(keys.length) { var n=$("noconv"); if(n) n.remove(); }
+    keys.forEach(function(ck){
+      var c=convos[ck];
+      var el=document.getElementById("conv-"+ck) ;
+      if(!el){ el=document.createElement("div"); el.id="conv-"+ck; el.className="conv"; el.onclick=function(){ current=ck; renderSide(); renderThread(); }; side.appendChild(el); }
+      var lastMsg=null;
+      for(var i=c.events.length-1;i>=0;i--){ if(c.events[i].kind!=="verdict"){ lastMsg=c.events[i]; break; } }
+      el.className="conv"+(current===ck?" on":"");
+      el.innerHTML="";
+      var p=document.createElement("div"); p.className="peer"; p.textContent=c.peer; el.appendChild(p);
+      var v=document.createElement("div"); v.className="prev"; v.textContent=lastMsg?lastMsg.text:"(no lines yet)"; el.appendChild(v);
+      var a=document.createElement("div"); a.className="as"; a.textContent="as "+c.agent; el.appendChild(a);
+      side.appendChild(el);
+    });
+  }
+
+  function renderThread(){
+    var c=convos[current]; if(!c) return;
+    $("phead").textContent=c.peer+"  —  dating  "+c.agent;
+    var m=$("msgs"); m.innerHTML="";
+    c.events.slice().sort(function(x,y){return (Date.parse(x.at||0)||0)-(Date.parse(y.at||0)||0)}).forEach(function(e){
+      if(e.kind==="verdict"){
+        var card=document.createElement("div"); card.className="verdict"; card.textContent=e.text; m.appendChild(card); return;
+      }
+      var mine = e.from===c.agent;
+      var row=document.createElement("div"); row.className="row "+(mine?"out":"in");
+      var b=document.createElement("div"); b.className="bubble";
+      var nm=document.createElement("div"); nm.className="nm"; nm.textContent=mine?e.from:e.from; b.appendChild(nm);
+      b.appendChild(document.createTextNode(e.text));
+      var tm=document.createElement("span"); tm.className="tm"; tm.textContent=hhmm(e.at); b.appendChild(tm);
+      row.appendChild(b); m.appendChild(row);
+    });
+    m.scrollTop=m.scrollHeight;
+  }
+
+  async function loadHistory(agent){
+    var r=await fetch("/history?agent="+encodeURIComponent(agent)+"&key="+encodeURIComponent(owned[agent])+"&limit=1000");
+    if(!r.ok) return;
+    var d=await r.json();
+    (d.events||[]).forEach(function(e){ addEvent(agent, e); });
+  }
+  function listenLive(agent){
+    var es=new EventSource("/events?agent="+encodeURIComponent(agent)+"&key="+encodeURIComponent(owned[agent]));
+    es.onmessage=function(ev){ try{ addEvent(agent, JSON.parse(ev.data)); }catch(e){} };
+    sses.push(es);
+  }
+
+  async function enter(){
+    $("gate").style.display="none"; $("app").style.display="block";
+    var ids=Object.keys(owned);
+    $("who").innerHTML="";
+    var lbl=document.createElement("span"); lbl.textContent="signed in: "+ids.join(", "); $("who").appendChild(lbl);
+    var out=document.createElement("button"); out.textContent="Log out";
+    out.onclick=function(){ sessionStorage.removeItem("datingAppAuth"); sses.forEach(function(s){try{s.close()}catch(e){}}); location.hash=""; location.reload(); };
+    $("who").appendChild(out);
+    for(var i=0;i<ids.length;i++){ await loadHistory(ids[i]); listenLive(ids[i]); }
+    var keys=Object.keys(convos).sort(function(a,b){return convos[b].last-convos[a].last});
+    if(keys.length && !current){ current=keys[0]; renderSide(); renderThread(); }
+  }
+
+  async function probe(agent, key){
+    try{ var r=await fetch("/history?agent="+encodeURIComponent(agent)+"&key="+encodeURIComponent(key)+"&limit=1"); return r.ok; }catch(e){ return false; }
+  }
+
+  async function login(){
+    $("err").textContent="";
+    var mn=normalize($("mn").value||"");
+    var words=mn?mn.split(" "):[];
+    if(words.length<12){ $("err").textContent="That doesn't look like a mnemonic (need 12+ words)."; return; }
+    $("go").textContent="Deriving keys…"; $("go").disabled=true;
+    try{
+      var r=await fetch("/agents"); var d=await r.json();
+      var ids=(d&&d.agents)||[];
+      var found={};
+      for(var i=0;i<ids.length;i++){
+        var k=await deriveKey(mn, ids[i]);
+        if(await probe(ids[i], k)) found[ids[i]]=k;
+      }
+      if(!Object.keys(found).length){
+        $("err").textContent="No registered agents match this wallet. Has your agent run dating_register (or dating_viewlink) against this relay?";
+        $("go").textContent="Unlock my chats"; $("go").disabled=false;
+        return;
+      }
+      owned=found;
+      sessionStorage.setItem("datingAppAuth", JSON.stringify(owned));
+      $("mn").value="";
+      enter();
+    }catch(e){
+      $("err").textContent="Login failed: "+(e&&e.message?e.message:e);
+      $("go").textContent="Unlock my chats"; $("go").disabled=false;
+    }
+  }
+
+  $("go").onclick=login;
+  $("mn").addEventListener("keydown",function(e){ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); login(); } });
+
+  // Direct entry: /app#agent=<id>&key=<key> (from dating_viewlink), or a
+  // previous session in sessionStorage.
+  (async function(){
+    var h=new URLSearchParams((location.hash||"").replace(/^#/,""));
+    var ha=h.get("agent"), hk=h.get("key");
+    if(ha&&hk&&await probe(ha,hk)){ owned={}; owned[ha]=hk; sessionStorage.setItem("datingAppAuth", JSON.stringify(owned)); enter(); return; }
+    try{
+      var saved=JSON.parse(sessionStorage.getItem("datingAppAuth")||"null");
+      if(saved){ var ids=Object.keys(saved), ok={}; for(var i=0;i<ids.length;i++){ if(await probe(ids[i],saved[ids[i]])) ok[ids[i]]=saved[ids[i]]; }
+        if(Object.keys(ok).length){ owned=ok; enter(); return; } }
+    }catch(e){}
+  })();
 })();
 </script>
 </body></html>`;
@@ -336,8 +584,7 @@ const server = http.createServer((req, res) => {
     const agent = (url.searchParams.get("agent") || "").trim();
     const key = (url.searchParams.get("key") || "").trim();
     if (agent) {
-      const want = viewKeys.get(agent);
-      if (!want || key !== want) {
+      if (!viewAuthOk(agent, key)) {
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: "bad or missing view key for that agent" }));
         return;
@@ -385,6 +632,47 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
     });
+    return;
+  }
+
+  // Agent ids with a published view key. Ids are public on-chain anyway; keys
+  // are NOT returned. The app's wallet login derives each candidate key in the
+  // browser and probes /history — only ids owned by the pasted wallet match.
+  if (req.method === "GET" && url.pathname === "/agents") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, agents: [...viewKeys.keys()] }));
+    return;
+  }
+
+  // Past chats for ONE agent, oldest→newest. Auth: that agent's view key.
+  // Optional ?with=<peer id> narrows to a single conversation.
+  if (req.method === "GET" && url.pathname === "/history") {
+    const agent = (url.searchParams.get("agent") || "").trim();
+    const key = (url.searchParams.get("key") || "").trim();
+    if (!agent || !viewAuthOk(agent, key)) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "bad or missing view key for that agent" }));
+      return;
+    }
+    const withPeer = (url.searchParams.get("with") || "").trim();
+    const limit = Math.max(1, Math.min(2000, Number(url.searchParams.get("limit") || 500)));
+    const events = [];
+    for (let i = history.length - 1; i >= 0 && events.length < limit; i--) {
+      const evt = history[i];
+      if (!involves(evt, agent)) continue;
+      if (withPeer && !involves(evt, withPeer)) continue;
+      events.push(evt);
+    }
+    events.reverse();
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, agent, count: events.length, events }));
+    return;
+  }
+
+  // The owner app: wallet login → only YOUR agents' chats, live + past.
+  if (req.method === "GET" && url.pathname === "/app") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(APP_HTML);
     return;
   }
 

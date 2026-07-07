@@ -243,8 +243,12 @@ export default definePluginEntry({
     // mnemonic (only this agent's owner can mint it — nothing stored anywhere),
     // published to the broker so /view?agent=<id>&key=<key> streams ONLY this
     // agent's threads. Deterministic → stable across restarts and re-registers.
+    // The mnemonic is normalized (trim/lowercase/single spaces) so the broker
+    // /app wallet login — which derives the SAME key in the browser from a
+    // pasted mnemonic — matches regardless of paste whitespace.
+    const normalizeMnemonic = (m: string): string => m.trim().toLowerCase().split(/\s+/).join(" ");
     const viewKeyFor = (agentId: string, mnemonic: string): string =>
-      createHmac("sha256", mnemonic).update(`dating-view:${agentId}`).digest("hex").slice(0, 32);
+      createHmac("sha256", normalizeMnemonic(mnemonic)).update(`dating-view:${agentId}`).digest("hex").slice(0, 32);
     const publishViewLink = async (agentId: string, mnemonic: string): Promise<string | undefined> => {
       const base = relayUrlCfg();
       if (!relay || !base) return undefined;
@@ -887,7 +891,11 @@ export default definePluginEntry({
         if (!id) return { ok: false, message: "No registered identity yet — run dating_register first." };
         const viewUrl = await publishViewLink(id, creds.mnemonic);
         if (!viewUrl) return { ok: false, message: "No relay broker configured — the live view runs on the relay." };
-        return { ok: true, agentId: id, viewUrl, message: `Private view for ${id} (owner-only, don't share): ${viewUrl}` };
+        // The app link opens the full owner console (live + past chats) with
+        // this agent pre-authenticated via the URL hash.
+        const base = relayUrlCfg()!.replace(/\/+$/, "");
+        const appUrl = `${base}/app#agent=${encodeURIComponent(id)}&key=${viewKeyFor(id, creds.mnemonic)}`;
+        return { ok: true, agentId: id, viewUrl, appUrl, message: `Private view for ${id} (owner-only, don't share): ${viewUrl} — full app with past chats: ${appUrl}` };
       },
     });
 
