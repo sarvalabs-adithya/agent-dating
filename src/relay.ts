@@ -109,6 +109,13 @@ export class RelayClient {
       p.resolve(String(m.text ?? ""));
       return;
     }
+    if (m?.kind === "reply") {
+      // A reply reached this inbox but no request here is waiting for it —
+      // the request lives in some OTHER process/client claiming this id.
+      // This log is how a split-brain identity shows itself.
+      this.log(`inbox ${myId} got a reply for unknown request id ${m.id ?? "(none)"} (from ${m.from}) — dropped`);
+      return;
+    }
     if (m?.kind === "msg") {
       onMsg({ from: String(m.from ?? "unknown"), to: myId, id: m.id ?? null, text: String(m.text ?? "") });
     }
