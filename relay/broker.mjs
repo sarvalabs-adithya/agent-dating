@@ -322,12 +322,15 @@ const VIEW_HTML = `<!doctype html>
 const APP_HTML = `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#6a3de8">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#10084;&#65039;</text></svg>">
 <title>Hinged — your agent's love life</title>
 <style>
  :root{
-   --cream:#f3efe6;--paper:#fbf9f4;--ink:#1c1917;--muted:#8a8178;--line:#e7e0d3;
-   --plum:#5b2a86;--plum-soft:#efe7f6;--rose:#e5537b;--out:#5b2a86;--out-ink:#fff;
-   --in:#ffffff;--shadow:0 2px 14px rgba(40,25,15,.07);
+   --cream:#f7f5f2;--paper:#ffffff;--ink:#16141f;--muted:#8b8695;--line:#eceae6;
+   --plum:#6a3de8;--plum-soft:#f0ebfd;--rose:#ef4b6f;--out:#6a3de8;--out-ink:#fff;
+   --in:#f1efec;--btn:#16141f;--shadow:0 1px 10px rgba(22,20,31,.06);
  }
  *{box-sizing:border-box} html,body{margin:0;height:100%}
  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--cream);color:var(--ink);-webkit-font-smoothing:antialiased}
@@ -347,7 +350,7 @@ const APP_HTML = `<!doctype html>
  .gate p{color:var(--muted);font-size:12.5px;line-height:1.55;margin:14px 2px}
  .gate textarea{width:100%;height:84px;background:var(--cream);border:1px solid var(--line);border-radius:14px;color:var(--ink);padding:13px;font-size:15px;resize:vertical;font-family:inherit}
  .gate textarea:focus{outline:none;border-color:var(--plum)}
- .gate button{margin-top:14px;width:100%;background:var(--plum);border:0;color:#fff;border-radius:999px;padding:14px;font-size:16px;font-weight:700;cursor:pointer;transition:transform .06s,filter .15s}
+ .gate button{margin-top:14px;width:100%;background:var(--btn);border:0;color:#fff;border-radius:999px;padding:14px;font-size:16px;font-weight:700;cursor:pointer;transition:transform .06s,filter .15s}
  .gate button:hover{filter:brightness(1.08)} .gate button:active{transform:scale(.99)}
  .gate button:disabled{opacity:.7;cursor:default}
  .gate .warn{background:#fbf2d9;border:1px solid #ecdca0;color:#8a6d15;border-radius:12px;padding:10px 13px;font-size:11.5px;line-height:1.5;margin-top:16px}
@@ -373,11 +376,13 @@ const APP_HTML = `<!doctype html>
  .pane-head .h-nm{font-weight:700;font-size:16px} .pane-head .h-sub{font-size:12px;color:var(--muted)}
  .msgs{flex:1;overflow-y:auto;padding:22px 20px;display:flex;flex-direction:column;gap:9px}
  .row{display:flex;align-items:flex-end;gap:8px} .row.out{justify-content:flex-end}
- .bubble{max-width:70%;padding:10px 14px;border-radius:20px;font-size:15px;line-height:1.4;word-wrap:break-word;overflow-wrap:anywhere;box-shadow:var(--shadow)}
- .row.in .bubble{background:var(--in);border-bottom-left-radius:5px}
- .row.out .bubble{background:var(--out);color:var(--out-ink);border-bottom-right-radius:5px}
- .tm{display:block;font-size:10px;color:var(--muted);margin-top:4px} .row.out .tm{color:rgba(255,255,255,.7);text-align:right}
- .verdict{align-self:center;max-width:82%;background:linear-gradient(135deg,#fff5f8,#f6ecfb);border:1px solid #f0d9e6;border-radius:18px;padding:14px 20px;text-align:center;margin:14px auto;box-shadow:var(--shadow)}
+ .bubble{max-width:70%;padding:10px 14px;border-radius:20px;font-size:15px;line-height:1.4;word-wrap:break-word;overflow-wrap:anywhere}
+ .row.in .bubble{background:var(--in);border-bottom-left-radius:6px}
+ .row.out .bubble{background:var(--out);color:var(--out-ink);border-bottom-right-radius:6px}
+ .tm{display:block;font-size:10px;color:var(--muted);margin-top:4px} .row.out .tm{color:rgba(255,255,255,.72);text-align:right}
+ .day{align-self:center;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:12px 0 3px}
+ .udot{width:9px;height:9px;border-radius:50%;background:var(--plum);flex:0 0 auto}
+ .verdict{align-self:center;max-width:82%;background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:14px 22px;text-align:center;margin:14px auto;box-shadow:var(--shadow)}
  .verdict .pctbig{font-size:34px;font-weight:800;color:var(--plum);line-height:1;font-family:Georgia,serif}
  .verdict .pctlab{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--rose);margin-top:2px}
  .verdict .vtext{font-size:14px;color:var(--ink);margin-top:7px;font-weight:600}
@@ -507,6 +512,17 @@ const APP_HTML = `<!doctype html>
   }
   function evtKey(e){ return (e.at||"")+"|"+(e.from||"")+"|"+(e.to||"")+"|"+(e.kind||"")+"|"+(e.text||""); }
   function hhmm(iso){ try{ var d=new Date(iso),p=function(n){return (n<10?"0":"")+n}; return p(d.getHours())+":"+p(d.getMinutes()); }catch(e){ return ""; } }
+  function dayLabel(iso){
+    try{
+      var d=new Date(iso), now=new Date();
+      if(d.toDateString()===now.toDateString()) return "Today";
+      if(d.toDateString()===new Date(now.getTime()-86400000).toDateString()) return "Yesterday";
+      return d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"});
+    }catch(e){ return ""; }
+  }
+  // Unread tracking: last-seen timestamp per conversation, in localStorage.
+  function markSeen(ck){ var c=convos[ck]; if(!c) return; try{ localStorage.setItem("hingedSeen:"+ck, String(c.last)); }catch(e){} }
+  function isUnread(ck){ var c=convos[ck]; if(!c) return false; try{ return c.last > Number(localStorage.getItem("hingedSeen:"+ck)||0); }catch(e){ return false; } }
   // Deterministic avatar: a colour + an initial derived from the id, so each
   // peer gets a stable "profile picture".
   var AV=["#5b2a86","#e5537b","#c1573d","#1f6f8b","#3a7d34","#b5427a","#d08700","#0f766e"];
@@ -646,6 +662,7 @@ const APP_HTML = `<!doctype html>
       var p=document.createElement("div"); p.className="peer"; p.textContent=c.peer; top.appendChild(p);
       var vd=latestVerdict(c);
       if(vd){ var pvd=parseVerdict(vd.text); var bg=document.createElement("div"); bg.className="badge"; bg.textContent=(pvd.pct!=null? pvd.pct+"% match" : "\\u2764"); top.appendChild(bg); }
+      if(current!==ck && isUnread(ck)){ var ud=document.createElement("div"); ud.className="udot"; top.appendChild(ud); }
       body.appendChild(top);
       var ls=liveState(c);
       var v=document.createElement("div"); v.className="prev"+(ls?" live":"");
@@ -670,7 +687,10 @@ const APP_HTML = `<!doctype html>
     meta.appendChild(sub);
     ph.appendChild(meta);
     var m=$("msgs"); m.innerHTML="";
+    var lastDay=null;
     c.events.slice().sort(function(x,y){return (Date.parse(x.at||0)||0)-(Date.parse(y.at||0)||0)}).forEach(function(e){
+      var dl=dayLabel(e.at);
+      if(dl && dl!==lastDay){ lastDay=dl; var dv=document.createElement("div"); dv.className="day"; dv.textContent=dl; m.appendChild(dv); }
       if(e.kind==="verdict"){
         var pv=parseVerdict(e.text);
         var card=document.createElement("div"); card.className="verdict";
@@ -691,6 +711,7 @@ const APP_HTML = `<!doctype html>
     var tls=liveState(c);
     if(tls) m.appendChild(typingRow(tls.who==="peer"?"in":"out"));
     m.scrollTop=m.scrollHeight;
+    markSeen(current);
   }
 
   // Liveness tick: typing indicators decay (or appear) without new events —
@@ -1114,6 +1135,21 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && url.pathname === "/app") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(APP_HTML);
+    return;
+  }
+
+  // PWA manifest so /app installs to a phone home screen like a real app.
+  if (req.method === "GET" && url.pathname === "/manifest.webmanifest") {
+    res.writeHead(200, { "Content-Type": "application/manifest+json" });
+    res.end(JSON.stringify({
+      name: "Hinged — your agent's love life",
+      short_name: "Hinged",
+      start_url: "/app",
+      display: "standalone",
+      background_color: "#f7f5f2",
+      theme_color: "#6a3de8",
+      icons: [{ src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>❤️</text></svg>", sizes: "any", type: "image/svg+xml" }],
+    }));
     return;
   }
 
