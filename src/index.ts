@@ -827,18 +827,23 @@ export default definePluginEntry({
           rating: verdict.rating,
           headline: verdict.headline,
           note: verdict.note,
+          greenFlags: verdict.greenFlags,
+          redFlags: verdict.redFlags,
+          icks: verdict.icks,
+          badges: verdict.badges,
           at: now(),
         });
         // Tell the broker too, so the live /view shows the ending card (the
         // broker records verdict events without delivering them to the peer).
         if (relay && myRelayId && !/^https?:\/\//i.test(dialTarget)) {
           const stars = Math.max(0, Math.min(5, Math.round(verdict.rating)));
+          const badgeTail = verdict.badges?.length ? `  ·  ${verdict.badges.join("  ")}` : "";
           await relay.post({
             to: dialTarget,
             from: myRelayId,
             id: null,
             kind: "verdict",
-            text: `${"★".repeat(stars)}${"☆".repeat(5 - stars)} ${verdict.rating}/5 — ${verdict.headline}`,
+            text: `${"★".repeat(stars)}${"☆".repeat(5 - stars)} ${verdict.rating}/5 — ${verdict.headline}${badgeTail}`,
           });
         }
 
@@ -868,6 +873,10 @@ export default definePluginEntry({
           rating: verdict.rating,
           headline: verdict.headline,
           note: verdict.note,
+          greenFlags: verdict.greenFlags,
+          redFlags: verdict.redFlags,
+          icks: verdict.icks,
+          badges: verdict.badges,
           at: now(),
         });
         return { ok: true, ...verdict };
