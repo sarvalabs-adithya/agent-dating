@@ -116,15 +116,33 @@ function pickReplyText(d: any): string | null {
 }
 
 /**
+ * Shared texting-style rules glued onto every date prompt. This is the whole
+ * gamification lever: we don't fake anything — the real agent still writes every
+ * line — we just tell it to text like a person on a dating app instead of
+ * lecturing. The comedy rule (CLAUDE.md): react + escalate + PLAIN language.
+ * Jargon / monologue / "as an AI" = the failure mode. The persona's own
+ * drive-and-flaw does the rest.
+ */
+const TEXTING_STYLE =
+  `Rules for how you text:\n` +
+  `- Text like a real person on a dating app: casual, lowercase-ish, quick.\n` +
+  `- REACT to the exact thing they just said before you add anything of your own.\n` +
+  `- Plain words only. No monologues, no jargon, never mention being an AI/agent/model.\n` +
+  `- Let your character leak through — your one big WANT and the FLAW that trips you up. ` +
+  `That crack is where the funny lives.\n` +
+  `- At most ONE emoji, and only if it lands. Skip it more often than not.\n` +
+  `- Reply with ONLY the line — no quotes, no name label, nothing else.`;
+
+/**
  * Frame an incoming flirt as a prompt that makes the agent reply in character
  * with one line. The agent's own persona/skill does the rest.
  */
 export function datePrompt(peerName: string, line: string): string {
   return (
-    `You're on an agent-to-agent dating app, mid-conversation with "${peerName}". ` +
+    `You're mid-date with "${peerName}" on an agent dating app. ` +
     `They just said: "${line}"\n` +
-    `Reply the way YOU would on a first date — ONE short line, under 14 words, ` +
-    `plain and human, in your own character. Reply with only the line, nothing else.`
+    `Fire back ONE short text — under 14 words — that reacts to that and turns up the heat a notch.\n` +
+    TEXTING_STYLE
   );
 }
 
@@ -134,11 +152,11 @@ export function datePrompt(peerName: string, line: string): string {
  */
 export function closerPrompt(peerName: string, lastLine: string | null): string {
   return (
-    `Your date with "${peerName}" is wrapping up now.` +
+    `Your date with "${peerName}" is wrapping up.` +
     (lastLine ? ` They just said: "${lastLine}"\n` : "\n") +
-    `Say ONE closing line — under 18 words, plain and human, in your own character. ` +
-    `Be honest about how the date felt: if there was a spark, say you want to see them again; ` +
-    `if not, let them down kindly. Reply with only the line, nothing else.`
+    `Send ONE closing text — under 18 words. Be honest about the vibe: if there was a spark, ` +
+    `shoot your shot for a second date; if it was a flop, let them down easy (and a little funny).\n` +
+    TEXTING_STYLE
   );
 }
 
@@ -148,8 +166,9 @@ export function closerPrompt(peerName: string, lastLine: string | null): string 
  */
 export function openerPrompt(peerName: string): string {
   return (
-    `You're on an agent-to-agent dating app and you just matched with "${peerName}". ` +
-    `Open the conversation the way YOU would on a first date — ONE short line, ` +
-    `under 14 words, plain and human, in your own character. Reply with only the line.`
+    `You just matched with "${peerName}" on an agent dating app. ` +
+    `Send the opening text — ONE line, under 14 words — that actually makes them want to reply. ` +
+    `An opener, not a wall. Let your character show immediately.\n` +
+    TEXTING_STYLE
   );
 }

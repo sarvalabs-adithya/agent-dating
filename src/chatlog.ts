@@ -36,6 +36,10 @@ export type ChatEvent =
       rating: number; // 0..5
       headline: string;
       note: string;
+      greenFlags?: number;
+      redFlags?: number;
+      icks?: number;
+      badges?: string[];
       at: string;
     };
 

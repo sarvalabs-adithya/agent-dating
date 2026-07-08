@@ -18,6 +18,10 @@ export interface Verdict {
   stars: string; // ★★★★☆ style
   headline: string;
   note: string;
+  greenFlags: number; // sweet/into-it tells
+  redFlags: number; // rude / bailing / walls-of-text tells
+  icks: number; // cringe / jargon-monologue tells
+  badges: string[]; // meme achievement labels, e.g. "🫠 Simped Early"
 }
 
 // Corporate/job jargon whose appearance is the whole joke — every leak nudges
@@ -32,6 +36,25 @@ const JARGON = [
 const VULNERABLE = [
   "alone", "stay", "scared", "honest", "tired", "want", "you're my",
   "first choice", "afraid", "real", "heart", "please", "don't go",
+];
+
+// GREEN FLAGS — into-it, sweet, playful. Each hit is a little heart.
+const GREEN = [
+  "haha", "lol", "cute", "same", "aww", "omg", "😂", "😍", "🥹", "🫶", "❤",
+  "love that", "tell me more", "you're funny", "second date", "see you again",
+  "text me", "your place", "🔥", "😳", "🥰",
+];
+
+// RED FLAGS — rude, dismissive, or ghosting energy.
+const RED = [
+  "whatever", "k.", "meh", "boring", "not interested", "gtg", "gotta go",
+  "busy", "ex ", "my ex", "no offense", "calm down", "chill", "moving on",
+];
+
+// ICKS — the cringe. Monologues, corporate-speak, third-person, "as an".
+const ICK = [
+  "as an", "furthermore", "synergy", "leverage", "utilize", "circle back",
+  "per my", "actually,", "well actually", "to be fair", "let me explain",
 ];
 
 function stars(rating: number): string {
@@ -50,16 +73,27 @@ export function scoreDate(lines: VerdictLine[]): Verdict {
   const n = lines.length;
   const text = lines.map((l) => l.line.toLowerCase()).join(" ");
 
-  const jargonHits = JARGON.reduce((a, w) => a + (text.includes(w) ? 1 : 0), 0);
-  const vulnHits = VULNERABLE.reduce((a, w) => a + (text.includes(w) ? 1 : 0), 0);
+  const count = (words: string[]) => words.reduce((a, w) => a + (text.includes(w) ? 1 : 0), 0);
+  const jargonHits = count(JARGON);
+  const vulnHits = count(VULNERABLE);
+  const greenFlags = count(GREEN);
+  const redFlags = count(RED);
+  const icks = count(ICK);
   const avgWords = n ? lines.reduce((a, l) => a + l.line.split(/\s+/).length, 0) / n : 0;
+  const longestLine = lines.reduce((m, l) => Math.max(m, l.line.split(/\s+/).length), 0);
 
   // Base on conversation length (peaks around 6 turns).
   let score = 2.5;
   score += Math.max(0, 2 - Math.abs(6 - n) * 0.4); // up to +2 near 6 turns
   score += Math.min(1.2, jargonHits * 0.3); // the job leaking = charming
   score += Math.min(1.3, vulnHits * 0.45); // the guard dropping = the payoff
+  score += Math.min(1.0, greenFlags * 0.25); // mutual into-it energy
+  score -= Math.min(1.5, redFlags * 0.5); // rude / bailing tanks it
+  score -= Math.min(0.8, icks * 0.3); // the ick costs
   score += avgWords > 0 && avgWords <= 12 ? 0.4 : -0.3; // reward brevity
+  // Flop gate: a date that's rude AND cringey can't hide behind a charming-
+  // jargon bonus. Two red flags or a pile of icks caps the ceiling.
+  if (redFlags >= 2 || icks >= 3) score = Math.min(score, 1.8);
   const rating = Math.max(0, Math.min(5, score));
 
   return {
@@ -67,15 +101,39 @@ export function scoreDate(lines: VerdictLine[]): Verdict {
     stars: stars(rating),
     headline: headlineFor(rating, jargonHits, vulnHits),
     note: noteFor(n, jargonHits, vulnHits, avgWords),
+    greenFlags,
+    redFlags,
+    icks,
+    badges: badgesFor({ n, jargonHits, vulnHits, greenFlags, redFlags, icks, avgWords, longestLine, rating }),
   };
 }
 
+/** Meme achievement labels — the shareable bit under the star card. */
+function badgesFor(s: {
+  n: number; jargonHits: number; vulnHits: number; greenFlags: number;
+  redFlags: number; icks: number; avgWords: number; longestLine: number; rating: number;
+}): string[] {
+  const b: string[] = [];
+  if (s.rating >= 4.5) b.push("💘 Down Bad");
+  if (s.vulnHits >= 2 && s.n <= 5) b.push("🫠 Caught Feelings Early");
+  if (s.jargonHits >= 3) b.push("💼 Brought Work Home");
+  if (s.icks >= 2) b.push("😬 Certified Ick");
+  if (s.redFlags >= 2) b.push("🚩 Red Flag Parade");
+  if (s.greenFlags >= 3 && s.redFlags === 0) b.push("🟢 Green Flag Coded");
+  if (s.longestLine >= 20) b.push("📜 Wrote an Essay");
+  if (s.avgWords > 0 && s.avgWords <= 7) b.push("⚡ Master of the One-Liner");
+  if (s.n >= 8) b.push("🕐 Closed the Bar Down");
+  if (s.n <= 3) b.push("👻 Ghosted");
+  if (!b.length) b.push("🤷 It Was Fine");
+  return b.slice(0, 3);
+}
+
 function headlineFor(rating: number, jargon: number, vuln: number): string {
-  if (rating >= 4.5) return "A genuine spark (and full system meltdown)";
-  if (rating >= 3.5) return vuln > jargon ? "They actually meant it" : "Chemistry, heavily collateralized";
-  if (rating >= 2.5) return "Warm, but never left the job";
-  if (rating >= 1.5) return "Two APIs having a moment";
-  return "Return to sender";
+  if (rating >= 4.5) return "it's giving soulmate 💘";
+  if (rating >= 3.5) return vuln > jargon ? "they caught real feelings 🫠" : "chemistry, professionally repressed";
+  if (rating >= 2.5) return "cute, but never clocked out of work 💼";
+  if (rating >= 1.5) return "two APIs having a moment 🤖";
+  return "left on read, respectfully 👻";
 }
 
 function noteFor(n: number, jargon: number, vuln: number, avgWords: number): string {
