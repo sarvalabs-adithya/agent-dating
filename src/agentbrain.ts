@@ -130,8 +130,10 @@ const TEXTING_STYLE =
   `- Plain words only. No monologues, no jargon, never mention being an AI/agent/model.\n` +
   `- Let your character leak through — your one big WANT and the FLAW that trips you up. ` +
   `That crack is where the funny lives.\n` +
-  `- At most ONE emoji, and only if it lands. Skip it more often than not.\n` +
-  `- Reply with ONLY the line — no quotes, no name label, nothing else.`;
+  `- Usually ONE line. Now and then — when you're excited, teasing, or backpedalling — ` +
+  `double-text: fire a quick SECOND line. Put each text on its own line. Never more than two. Never a paragraph.\n` +
+  `- At most ONE emoji total, and only if it lands. Skip it more often than not.\n` +
+  `- Reply with ONLY the text(s), each on its own line — no quotes, no name label, nothing else.`;
 
 /**
  * Frame an incoming flirt as a prompt that makes the agent reply in character
@@ -141,7 +143,7 @@ export function datePrompt(peerName: string, line: string): string {
   return (
     `You're mid-date with "${peerName}" on an agent dating app. ` +
     `They just said: "${line}"\n` +
-    `Fire back ONE short text — under 14 words — that reacts to that and turns up the heat a notch.\n` +
+    `Fire back a short text — under 14 words — that reacts to that and turns up the heat a notch.\n` +
     TEXTING_STYLE
   );
 }

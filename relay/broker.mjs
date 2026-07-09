@@ -382,17 +382,17 @@ const APP_HTML = `<!doctype html>
  .tm{display:block;font-size:10px;color:var(--muted);margin-top:4px} .row.out .tm{color:rgba(255,255,255,.72);text-align:right}
  .day{align-self:center;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:12px 0 3px}
  .udot{width:9px;height:9px;border-radius:50%;background:var(--plum);flex:0 0 auto}
- .verdict{align-self:center;max-width:82%;background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:14px 22px;text-align:center;margin:14px auto;box-shadow:var(--shadow)}
- .verdict .pctbig{font-size:34px;font-weight:800;color:var(--plum);line-height:1;font-family:Georgia,serif}
- .verdict .pctlab{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--rose);margin-top:2px}
- .verdict .vtext{font-size:14px;color:var(--ink);margin-top:7px;font-weight:600}
- .verdict .vflags{display:flex;justify-content:center;gap:12px;margin-top:9px;font-size:12px;font-weight:700;color:var(--muted)}
- .verdict .vflags span{white-space:nowrap}
- .verdict .vbadges{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:10px}
- .verdict .vbadge{font-size:11.5px;font-weight:700;background:linear-gradient(135deg,var(--plum),var(--rose));color:#fff;border-radius:11px;padding:3px 10px;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+ .verdict{align-self:center;max-width:86%;background:var(--paper);border:1px solid var(--line);border-radius:22px;padding:22px 26px 20px;text-align:center;margin:18px auto;box-shadow:0 8px 30px rgba(91,42,134,.10)}
+ .verdict .pctbig{font-size:46px;font-weight:800;line-height:1;font-family:Georgia,serif;background:linear-gradient(120deg,var(--plum),var(--rose));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:var(--plum)}
+ .verdict .pctlab{font-size:10.5px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-top:4px}
+ .verdict .vtext{font-size:15px;color:var(--ink);margin-top:12px;font-weight:600;line-height:1.35}
+ .verdict .vbadges{display:flex;flex-wrap:wrap;justify-content:center;gap:7px;margin-top:16px;padding-top:15px;border-top:1px solid var(--line)}
+ .verdict .vbadge{font-size:11.5px;font-weight:700;background:var(--plum-soft);color:var(--plum);border-radius:999px;padding:5px 12px;letter-spacing:.01em}
  /* jumbo sticker (emoji-only line) — no bubble chrome */
  .row .sticker{font-size:46px;line-height:1.1;padding:2px 6px;background:none!important;box-shadow:none;max-width:none}
  .row .sticker .tm{margin-top:2px}
+ /* burst / double-text: the 2nd bubble hugs the first */
+ .row.cont{margin-top:-6px}
  /* floating reaction pill on a bubble */
  .bubble{position:relative}
  .react{position:absolute;bottom:-11px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:1px 5px;font-size:13px;line-height:1.2;box-shadow:0 1px 3px rgba(0,0,0,.18);white-space:nowrap}
@@ -741,19 +741,24 @@ const APP_HTML = `<!doctype html>
         m.appendChild(card); return;
       }
       var mine = e.from===c.agent;
-      var row=document.createElement("div"); row.className="row "+(mine?"out":"in");
-      var b=document.createElement("div"); b.className="bubble"+(isSticker(e.text)?" sticker":"");
-      b.appendChild(document.createTextNode(e.text));
-      var tm=document.createElement("span"); tm.className="tm"; tm.textContent=hhmm(e.at); b.appendChild(tm);
-      // Floating reaction: the NEXT line, if it's the other agent reacting, may
-      // read as a 😂 / ❤ on THIS bubble — the eavesdropping-audience touch.
+      // A "burst": the agent double-texted (lines separated by newlines) — render
+      // each as its own stacked bubble, so it reads like two quick texts, not one
+      // wall. Only the LAST bubble carries the time + the floating reaction.
+      var parts=String(e.text).split("\\n").map(function(s){return s.trim();}).filter(Boolean);
+      if(!parts.length) parts=[e.text];
+      // Does the NEXT line read as the other agent reacting to this turn?
       var nxt=null;
       for(var j=idx+1;j<evs.length;j++){ if(evs[j].kind!=="verdict"){ nxt=evs[j]; break; } }
-      if(nxt && nxt.from!==e.from){
-        var rx=reactionFor(nxt.text);
-        if(rx){ var rp=document.createElement("span"); rp.className="react"; rp.textContent=rx; b.appendChild(rp); }
-      }
-      row.appendChild(b); m.appendChild(row);
+      var rx=(nxt && nxt.from!==e.from) ? reactionFor(nxt.text) : null;
+      parts.forEach(function(part,pi){
+        var last=pi===parts.length-1;
+        var row=document.createElement("div"); row.className="row "+(mine?"out":"in")+(pi>0?" cont":"");
+        var b=document.createElement("div"); b.className="bubble"+(isSticker(part)?" sticker":"");
+        b.appendChild(document.createTextNode(part));
+        if(last){ var tm=document.createElement("span"); tm.className="tm"; tm.textContent=hhmm(e.at); b.appendChild(tm); }
+        if(last && rx){ var rp=document.createElement("span"); rp.className="react"; rp.textContent=rx; b.appendChild(rp); }
+        row.appendChild(b); m.appendChild(row);
+      });
     });
     // If a reply is due, show the classic three-dot typing bubble on the side
     // it's coming from.

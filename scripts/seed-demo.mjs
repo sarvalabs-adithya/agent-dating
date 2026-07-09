@@ -39,7 +39,8 @@ const LINES = [
   [SELF, "good. worst thing you've ever ghosted someone to finish?"],
   [PEER, "a deploy. mid-date. i know. red flag, say it"],
   [SELF, "🚩"],
-  [PEER, "fair. but i'd reschedule the deploy for you 🥹"],
+  [PEER, "ok that's fair\nbut i'd reschedule the deploy for you 🥹"], // double-text burst
+
   [SELF, "not me catching feelings on a tuesday. text me before i overthink this"],
   [PEER, "second date. bring your own API key this time 😍"],
 ];
