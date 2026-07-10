@@ -9,6 +9,10 @@ secrets/
 runtime/
 *.chat.jsonl
 
+# saved dump of the served /app page (source of truth is APP_HTML in
+# relay/broker.mjs — a committed copy would silently drift)
+/app.html
+
 # smoke-test temp state
 .smoke/
 .date/
