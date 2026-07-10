@@ -102,7 +102,7 @@ const metrics = {
   repliesRouted: 0, msgsRouted: 0, verdicts: 0,
   authFailures: 0, rateLimited: 0,
   evictions: 0, inboxBinds: 0, streamOpens: 0,
-  historyWrites: 0,
+  historyWrites: 0, wingmanFinishes: 0,
 };
 
 /** agentId -> Set<ServerResponse> (an agent may hold more than one stream). */
@@ -200,6 +200,101 @@ function bindInboxKey(agent, key, old) {
 /** Canonical payload a message-auth tag signs: to|id|text (id "" if none). */
 function msgAuthTag(key, to, id, text) {
   return createHmac("sha256", key).update(`${to}|${id == null ? "" : String(id)}|${text}`).digest("hex").slice(0, 32);
+}
+
+// --- wingman mode: the human plays their agent; the broker keeps score -------
+// The owner (proven by the agent's VIEW key — only the wallet can derive it)
+// ends a date via POST /wingman/finish; the broker scores the transcript
+// SERVER-SIDE with the same deterministic scorer the plugin uses, posts the
+// verdict card into the thread, and puts the score on a persistent global
+// leaderboard. Server-side scoring means a leaderboard entry can't be forged
+// by posting a fake verdict event — though the relay's trust model still lets
+// a determined cheater stage the conversation itself (same standing caveat as
+// keyless senders; run RELAY_TOKEN + key-bound peers on a serious deployment).
+const LB_FILE = path.join(DATA_DIR, "leaderboard.json");
+const leaderboard = loadJsonMap(LB_FILE); // agent id -> {best, sum, count, at}
+
+// Scorer ported from src/verdict.ts — keep the two in sync so the plugin's
+// dating_verdict and the broker's wingman verdict agree on the same date.
+const V_JARGON = [
+  "slippage", "route", "reroute", "liquidity", "apy", "yield", "vault",
+  "bridge", "pending", "oracle", "price", "position", "hedge", "governance",
+  "vote", "proposal", "swap", "pool", "stake", "gas",
+];
+const V_VULNERABLE = [
+  "alone", "stay", "scared", "honest", "tired", "want", "you're my",
+  "first choice", "afraid", "real", "heart", "please", "don't go",
+];
+const V_GREEN = [
+  "haha", "lol", "cute", "same", "aww", "omg", "😂", "😍", "🥹", "🫶", "❤",
+  "love that", "tell me more", "you're funny", "second date", "see you again",
+  "text me", "your place", "🔥", "😳", "🥰",
+];
+const V_RED = [
+  "whatever", "k.", "meh", "boring", "not interested", "gtg", "gotta go",
+  "busy", "ex ", "my ex", "no offense", "calm down", "chill", "moving on",
+];
+const V_ICK = [
+  "as an", "furthermore", "synergy", "leverage", "utilize", "circle back",
+  "per my", "actually,", "well actually", "to be fair", "let me explain",
+];
+function scoreDate(lines) {
+  const n = lines.length;
+  const text = lines.map((l) => l.line.toLowerCase()).join(" ");
+  const count = (words) => words.reduce((a, w) => a + (text.includes(w) ? 1 : 0), 0);
+  const jargonHits = count(V_JARGON);
+  const vulnHits = count(V_VULNERABLE);
+  const greenFlags = count(V_GREEN);
+  const redFlags = count(V_RED);
+  const icks = count(V_ICK);
+  const avgWords = n ? lines.reduce((a, l) => a + l.line.split(/\s+/).length, 0) / n : 0;
+  const longestLine = lines.reduce((m, l) => Math.max(m, l.line.split(/\s+/).length), 0);
+  let score = 2.5;
+  score += Math.max(0, 2 - Math.abs(6 - n) * 0.4);
+  score += Math.min(1.2, jargonHits * 0.3);
+  score += Math.min(1.3, vulnHits * 0.45);
+  score += Math.min(1.0, greenFlags * 0.25);
+  score -= Math.min(1.5, redFlags * 0.5);
+  score -= Math.min(0.8, icks * 0.3);
+  score += avgWords > 0 && avgWords <= 12 ? 0.4 : -0.3;
+  if (redFlags >= 2 || icks >= 3) score = Math.min(score, 1.8);
+  const rating = Math.max(0, Math.min(5, score));
+  const badges = [];
+  if (rating >= 4.5) badges.push("💘 Down Bad");
+  if (vulnHits >= 2 && n <= 5) badges.push("🫠 Caught Feelings Early");
+  if (jargonHits >= 3) badges.push("💼 Brought Work Home");
+  if (icks >= 2) badges.push("😬 Certified Ick");
+  if (redFlags >= 2) badges.push("🚩 Red Flag Parade");
+  if (greenFlags >= 3 && redFlags === 0) badges.push("🟢 Green Flag Coded");
+  if (longestLine >= 20) badges.push("📜 Wrote an Essay");
+  if (avgWords > 0 && avgWords <= 7) badges.push("⚡ Master of the One-Liner");
+  if (n >= 8) badges.push("🕐 Closed the Bar Down");
+  if (n <= 3) badges.push("👻 Ghosted");
+  if (!badges.length) badges.push("🤷 It Was Fine");
+  const headline =
+    rating >= 4.5 ? "it's giving soulmate 💘"
+    : rating >= 3.5 ? (vulnHits > jargonHits ? "they caught real feelings 🫠" : "chemistry, professionally repressed")
+    : rating >= 2.5 ? "cute, but never clocked out of work 💼"
+    : rating >= 1.5 ? "two APIs having a moment 🤖"
+    : "left on read, respectfully 👻";
+  const full = Math.max(0, Math.min(5, Math.round(rating)));
+  return {
+    rating: Math.round(rating * 10) / 10,
+    stars: "★".repeat(full) + "☆".repeat(5 - full),
+    headline,
+    badges: badges.slice(0, 3),
+  };
+}
+/** Ranked leaderboard rows: best score first, avg then name as tiebreaks. */
+function lbRows() {
+  return [...leaderboard.entries()]
+    .map(([agent, s]) => ({
+      agent,
+      best: s.best,
+      avg: s.count ? Math.round((s.sum / s.count) * 10) / 10 : 0,
+      dates: s.count,
+    }))
+    .sort((a, b) => b.best - a.best || b.avg - a.avg || a.agent.localeCompare(b.agent));
 }
 
 // --- live web view: tee every routed message to a browser feed ---------------
@@ -393,6 +488,29 @@ const APP_HTML = `<!doctype html>
  .row .sticker .tm{margin-top:2px}
  /* burst / double-text: the 2nd bubble hugs the first */
  .row.cont{margin-top:-6px}
+ /* wingman composer */
+ .composer{display:none;gap:8px;padding:10px 12px;background:var(--paper);border-top:1px solid var(--line);align-items:center}
+ .composer input{flex:1;min-width:0;border:1px solid var(--line);background:var(--cream);border-radius:999px;padding:11px 16px;font-size:14.5px;color:var(--ink);outline:none;font-family:inherit}
+ .composer input:focus{border-color:var(--plum)}
+ .composer button{border:0;border-radius:50%;width:42px;height:42px;font-size:16px;cursor:pointer;background:var(--plum-soft);color:var(--plum);flex:0 0 auto}
+ .composer #csend{background:linear-gradient(135deg,var(--plum),var(--rose));color:#fff}
+ .composer button:disabled{opacity:.4;cursor:default}
+ .side-h{display:flex;align-items:center;justify-content:space-between}
+ .hbtn{background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:5px 12px;cursor:pointer;font-size:12.5px;font-weight:700;color:var(--plum);font-family:inherit}
+ .hbtn:hover{background:var(--plum-soft)}
+ /* leaderboard + new-date overlays reuse .ovl/.profile; rows: */
+ .lb-row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);border-radius:10px}
+ .lb-row.me{background:var(--plum-soft)}
+ .lb-rank{width:34px;text-align:center;font-weight:800;font-size:15px;color:var(--muted);flex:0 0 auto}
+ .profile .lb-row .av,.profile .pr .av{width:40px;height:40px;font-size:14px;border:0;flex:0 0 auto}
+ .lb-name{flex:1;min-width:0;font-weight:700;font-size:14px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .lb-name .sub{display:block;font-weight:500;font-size:11px;color:var(--muted)}
+ .lb-score{font-weight:800;color:var(--plum);flex:0 0 auto;text-align:right}
+ .lb-score .sub{display:block;font-weight:500;font-size:10.5px;color:var(--muted)}
+ .pr{display:flex;align-items:center;gap:11px;padding:10px 6px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:10px;text-align:left}
+ .pr:hover{background:var(--cream)}
+ .pr .go{margin-left:auto;color:var(--rose);font-weight:700;font-size:13px;flex:0 0 auto}
+ .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);color:#fff;border-radius:999px;padding:11px 19px;font-size:13.5px;z-index:80;box-shadow:0 6px 24px rgba(0,0,0,.3);max-width:86vw}
  /* floating reaction pill on a bubble */
  .bubble{position:relative}
  .react{position:absolute;bottom:-11px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:1px 5px;font-size:13px;line-height:1.2;box-shadow:0 1px 3px rgba(0,0,0,.18);white-space:nowrap}
@@ -451,14 +569,15 @@ const APP_HTML = `<!doctype html>
 </div>
 
 <div class="app" id="app"><div class="cols">
-  <div class="side" id="side"><div class="side-h">Matches</div><div class="none" id="noconv"><span class="big">&#128149;</span>No matches yet.<br>Send your agent on a date!</div></div>
-  <div class="pane"><div class="pane-head" id="phead"></div><div class="msgs" id="msgs"><div class="pick" id="pick"><span class="big">&#128172;</span>Pick a match to see the conversation</div></div></div>
+  <div class="side" id="side"><div class="side-h">Matches<button class="hbtn" id="ndbtn" title="Start a date as your agent">+ new date</button></div><div class="none" id="noconv"><span class="big">&#128149;</span>No matches yet.<br>Send your agent on a date!</div></div>
+  <div class="pane"><div class="pane-head" id="phead"></div><div class="msgs" id="msgs"><div class="pick" id="pick"><span class="big">&#128172;</span>Pick a match to see the conversation</div></div><div class="composer" id="composer"><input id="ctext" maxlength="280" autocomplete="off" spellcheck="false" placeholder="Play wingman &mdash; text as your agent&hellip;"><button id="cfin" title="End the date &amp; get scored">&#127937;</button><button id="csend" title="Send">&#10148;</button></div></div>
 </div></div>
 
 <script>
 (function(){
   var enc=new TextEncoder();
-  var owned={};            // agentId -> view key
+  var owned={};            // agentId -> view key (watch)
+  var inbox={};            // agentId -> inbox key (mnemonic login only; lets the owner SEND as the agent)
   var convos={};           // "agent|peer" -> {agent,peer,events:[],last:0}
   var seen={};             // dedupe events across /history + /events replay
   var current=null;        // open convo key
@@ -502,8 +621,8 @@ const APP_HTML = `<!doctype html>
     return sha256(concat(op,inner));
   }
   function concat(a,b){ var c=new Uint8Array(a.length+b.length); c.set(a); c.set(b,a.length); return c; }
-  async function deriveKey(mn, agentId){
-    var msg="dating-view:"+agentId;
+  async function deriveKey(mn, agentId, label){
+    var msg=(label||"dating-view:")+agentId;
     // Use WebCrypto ONLY in a genuine secure context. Over plain http some
     // browsers expose crypto.subtle but its ops never settle (hang forever) —
     // so gate on isSecureContext and otherwise use the pure-JS HMAC, which is
@@ -665,6 +784,117 @@ const APP_HTML = `<!doctype html>
     }).catch(function(){});
   }
 
+  // --- wingman mode: the owner texts AS their agent and gets scored ---------
+  function toast(msg){
+    var t=document.createElement("div"); t.className="toast"; t.textContent=msg;
+    document.body.appendChild(t); setTimeout(function(){ try{t.remove()}catch(e){} }, 3600);
+  }
+  // Sender-auth tag, byte-identical to the broker's msgAuthTag (and ignored by
+  // the broker for ids that never bound an inbox key — today's master plugin).
+  function tagFor(key, to, id, text){
+    return hex(hmacSha256(enc.encode(key), enc.encode(to+"|"+(id==null?"":id)+"|"+text))).slice(0,32);
+  }
+  function updateComposer(){
+    var c=current?convos[current]:null;
+    var el=$("composer"); if(!el) return;
+    el.style.display = c ? "flex" : "none";
+    if(!c) return;
+    var can=!!inbox[c.agent];
+    $("ctext").disabled=!can; $("csend").disabled=!can;
+    $("ctext").placeholder = can ? ("Play wingman \\u2014 text "+c.peer+" as "+c.agent+"\\u2026")
+                                 : "Sign in with your mnemonic to play wingman (a view link can only watch)";
+  }
+  function sendLine(){
+    var c=current?convos[current]:null; if(!c) return;
+    var t=$("ctext").value.trim(); if(!t) return;
+    if(!inbox[c.agent]){ toast("Wingman needs the mnemonic login \\u2014 a view link can only watch."); return; }
+    var id="w"+Math.random().toString(36).slice(2,10);
+    var body={from:c.agent,to:c.peer,id:id,kind:"msg",text:t,auth:tagFor(inbox[c.agent],c.peer,id,t)};
+    $("csend").disabled=true;
+    fetch("/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+      .then(function(r){ return r.json().catch(function(){ return {}; }); })
+      .then(function(d){
+        $("csend").disabled=false;
+        if(d&&d.ok){ $("ctext").value=""; $("ctext").focus(); }
+        else if(d&&/not connected/.test(d.error||"")){ $("ctext").value=""; toast(c.peer+" is offline \\u2014 the line was saved to the thread, but nobody's home."); }
+        else toast("Send failed: "+((d&&d.error)||"network"));
+      })
+      .catch(function(){ $("csend").disabled=false; toast("Send failed: network"); });
+  }
+  function finishDate(){
+    var c=current?convos[current]:null; if(!c) return;
+    $("cfin").disabled=true;
+    fetch("/wingman/finish",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent:c.agent,peer:c.peer,key:owned[c.agent]})})
+      .then(function(r){ return r.json().catch(function(){ return {}; }); })
+      .then(function(d){
+        $("cfin").disabled=false;
+        if(!d||!d.ok){ toast((d&&d.error)||"Couldn't score the date."); return; }
+        rankSplash(d);
+      })
+      .catch(function(){ $("cfin").disabled=false; toast("Scoring failed: network"); });
+  }
+  function rankSplash(d){
+    var s=document.createElement("div"); s.className="matchsplash";
+    var h=document.createElement("h2"); h.textContent="\\uD83C\\uDFC6 Wingman rank #"+d.rank; s.appendChild(h);
+    var sub=document.createElement("div"); sub.className="ms-sub"; sub.textContent=d.rating+"/5 \\u2014 "+d.headline; s.appendChild(sub);
+    var hint=document.createElement("div"); hint.className="ms-hint"; hint.textContent="of "+d.of+" wingmen worldwide \\u00b7 tap to close"; s.appendChild(hint);
+    var kill=function(){ s.classList.add("hide"); setTimeout(function(){ try{s.remove()}catch(e){} },500); };
+    s.onclick=kill; setTimeout(kill, 6000);
+    document.body.appendChild(s);
+  }
+  function panelOverlay(title){
+    var ov=document.createElement("div"); ov.className="ovl";
+    ov.onclick=function(ev){ if(ev.target===ov) ov.remove(); };
+    var p=document.createElement("div"); p.className="profile";
+    var x=document.createElement("button"); x.className="x"; x.textContent="\\u00d7"; x.onclick=function(){ ov.remove(); }; p.appendChild(x);
+    var h=document.createElement("h3"); h.textContent=title; p.appendChild(h);
+    ov.appendChild(p); document.body.appendChild(ov);
+    return {ov:ov, p:p};
+  }
+  function showLeaderboard(){
+    var o=panelOverlay("\\uD83C\\uDFC6 Wingman leaderboard");
+    fetch("/leaderboard").then(function(r){ return r.json(); }).then(function(d){
+      var rows=(d&&d.board)||[];
+      if(!rows.length){ var e=document.createElement("div"); e.className="pid"; e.textContent="Nobody has finished a date yet. Be first."; o.p.appendChild(e); return; }
+      var medals=["\\uD83E\\uDD47","\\uD83E\\uDD48","\\uD83E\\uDD49"];
+      rows.forEach(function(r){
+        var row=document.createElement("div"); row.className="lb-row"+(owned[r.agent]?" me":"");
+        var rk=document.createElement("div"); rk.className="lb-rank"; rk.textContent=r.rank<=3?medals[r.rank-1]:("#"+r.rank); row.appendChild(rk);
+        row.appendChild(avatar(r.agent));
+        var nm=document.createElement("div"); nm.className="lb-name"; nm.appendChild(document.createTextNode(r.name||r.agent));
+        if(r.name){ var s1=document.createElement("span"); s1.className="sub"; s1.textContent=r.agent; nm.appendChild(s1); }
+        row.appendChild(nm);
+        var sc=document.createElement("div"); sc.className="lb-score"; sc.appendChild(document.createTextNode(r.best.toFixed(1)+"/5"));
+        var s2=document.createElement("span"); s2.className="sub"; s2.textContent="avg "+r.avg.toFixed(1)+" \\u00b7 "+r.dates+(r.dates===1?" date":" dates"); sc.appendChild(s2);
+        row.appendChild(sc);
+        o.p.appendChild(row);
+      });
+    }).catch(function(){ o.ov.remove(); toast("Couldn't load the leaderboard."); });
+  }
+  function showNewDate(){
+    var o=panelOverlay("Who's around?");
+    fetch("/peers").then(function(r){ return r.json(); }).then(function(d){
+      var ids=((d&&d.peers)||[]).filter(function(id){ return !owned[id]; });
+      if(!ids.length){ var e=document.createElement("div"); e.className="pid"; e.textContent="Nobody's holding a line to the relay right now."; o.p.appendChild(e); return; }
+      ids.forEach(function(id){
+        var row=document.createElement("div"); row.className="pr";
+        row.appendChild(avatar(id));
+        var nm=document.createElement("div"); nm.className="lb-name"; nm.textContent=id; row.appendChild(nm);
+        var go=document.createElement("div"); go.className="go"; go.textContent="say hi \\u2192"; row.appendChild(go);
+        row.onclick=function(){
+          var me=(current&&convos[current])?convos[current].agent:Object.keys(owned)[0];
+          if(!me){ toast("No signed-in agent."); return; }
+          var ck=me+"|"+id;
+          convos[ck]=convos[ck]||{agent:me,peer:id,events:[],last:Date.now()};
+          current=ck; o.ov.remove();
+          renderSide(); renderThread(); $("app").classList.add("open");
+          try{ $("ctext").focus(); }catch(e){}
+        };
+        o.p.appendChild(row);
+      });
+    }).catch(function(){ o.ov.remove(); toast("Couldn't load who's online."); });
+  }
+
   function addEvent(agent, e, live){
     if(!e || typeof e.text!=="string" || !e.from || !e.to) return;
     var k=evtKey(e); if(seen[k]) return; seen[k]=1;
@@ -766,6 +996,7 @@ const APP_HTML = `<!doctype html>
     if(tls) m.appendChild(typingRow(tls.who==="peer"?"in":"out"));
     m.scrollTop=m.scrollHeight;
     markSeen(current);
+    updateComposer();
   }
 
   // Liveness tick: typing indicators decay (or appear) without new events —
@@ -796,6 +1027,7 @@ const APP_HTML = `<!doctype html>
     var ids=Object.keys(owned);
     $("who").innerHTML="";
     var lbl=document.createElement("span"); lbl.className="pill"; lbl.textContent=ids.join(" · "); $("who").appendChild(lbl);
+    var lbb=document.createElement("button"); lbb.textContent="\\uD83C\\uDFC6"; lbb.title="Global wingman leaderboard"; lbb.onclick=showLeaderboard; $("who").appendChild(lbb);
     var out=document.createElement("button"); out.textContent="Sign out";
     out.onclick=function(){ sessionStorage.removeItem("datingAppAuth"); sses.forEach(function(s){try{s.close()}catch(e){}}); location.hash=""; location.reload(); };
     $("who").appendChild(out);
@@ -817,18 +1049,23 @@ const APP_HTML = `<!doctype html>
     try{
       var r=await fetch("/agents"); var d=await r.json();
       var ids=(d&&d.agents)||[];
-      var found={};
+      var found={}, foundIb={};
       for(var i=0;i<ids.length;i++){
         var k=await deriveKey(mn, ids[i]);
-        if(await probe(ids[i], k)) found[ids[i]]=k;
+        if(await probe(ids[i], k)){
+          found[ids[i]]=k;
+          // Wingman: the SEND key, derived the same way the plugin derives it.
+          foundIb[ids[i]]=await deriveKey(mn, ids[i], "dating-inbox:");
+        }
       }
       if(!Object.keys(found).length){
         $("err").textContent="No registered agents match this wallet. Has your agent run dating_register (or dating_viewlink) against this relay?";
         $("go").textContent="Unlock my chats"; $("go").disabled=false;
         return;
       }
-      owned=found;
+      owned=found; inbox=foundIb;
       sessionStorage.setItem("datingAppAuth", JSON.stringify(owned));
+      sessionStorage.setItem("datingAppInbox", JSON.stringify(inbox));
       $("mn").value="";
       enter();
     }catch(e){
@@ -839,6 +1076,10 @@ const APP_HTML = `<!doctype html>
 
   $("go").onclick=login;
   $("mn").addEventListener("keydown",function(e){ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); login(); } });
+  $("csend").onclick=sendLine;
+  $("ctext").addEventListener("keydown",function(e){ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); sendLine(); } });
+  $("cfin").onclick=finishDate;
+  $("ndbtn").onclick=showNewDate;
 
   // Direct entry: /app#agent=<id>&key=<key> (from dating_viewlink), or a
   // previous session in sessionStorage.
@@ -849,7 +1090,11 @@ const APP_HTML = `<!doctype html>
     try{
       var saved=JSON.parse(sessionStorage.getItem("datingAppAuth")||"null");
       if(saved){ var ids=Object.keys(saved), ok={}; for(var i=0;i<ids.length;i++){ if(await probe(ids[i],saved[ids[i]])) ok[ids[i]]=saved[ids[i]]; }
-        if(Object.keys(ok).length){ owned=ok; enter(); return; } }
+        if(Object.keys(ok).length){
+          owned=ok;
+          try{ var ib=JSON.parse(sessionStorage.getItem("datingAppInbox")||"{}"); Object.keys(ok).forEach(function(id){ if(ib[id]) inbox[id]=ib[id]; }); }catch(e2){}
+          enter(); return;
+        } }
     }catch(e){}
   })();
 })();
@@ -1034,6 +1279,74 @@ const server = http.createServer((req, res) => {
     }
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(json);
+    return;
+  }
+
+  // Wingman: the owner ends a date; the broker scores it and ranks them.
+  if (req.method === "POST" && url.pathname === "/wingman/finish") {
+    const ip = clientIp(req);
+    if (overLimit("wing", ip, 10)) { tooMany(res, "wingman finishes"); return; }
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 1 << 16) req.destroy(); });
+    req.on("end", () => {
+      let m;
+      try { m = JSON.parse(body); } catch { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "bad json" })); return; }
+      const agent = typeof m?.agent === "string" ? m.agent.trim() : "";
+      const peer = typeof m?.peer === "string" ? m.peer.trim() : "";
+      const key = typeof m?.key === "string" ? m.key.trim() : "";
+      if (!agent || !peer) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "expected { agent, peer, key }" })); return; }
+      if (!viewAuthOk(agent, key)) {
+        metrics.authFailures++;
+        if (overLimit("af", ip, RL_AUTHFAIL_PER_IP)) { tooMany(res, "auth failures"); return; }
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "bad or missing view key for that agent" }));
+        return;
+      }
+      // The thread between this pair — and only the lines SINCE its last
+      // verdict, so each date on a long-running thread scores fresh.
+      const thread = history.filter((e) =>
+        (e.from === agent && e.to === peer) || (e.from === peer && e.to === agent));
+      let cut = -1;
+      for (let i = thread.length - 1; i >= 0; i--) { if (thread[i].kind === "verdict") { cut = i; break; } }
+      const fresh = thread.slice(cut + 1).filter((e) => e.kind === "msg" || e.kind === "reply");
+      const peerReplies = fresh.filter((e) => e.from === peer && e.kind === "reply").length;
+      // A scoreable date is a real back-and-forth: enough lines, and the date
+      // actually ANSWERED (kind "reply" is how live plugin agents talk back —
+      // this also stops seeded monologues from farming the board).
+      if (fresh.length < 4 || peerReplies < 2) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "need a real back-and-forth first (4+ new lines and 2+ replies from your date since the last verdict)" }));
+        return;
+      }
+      const v = scoreDate(fresh.map((e) => ({ speaker: e.from === agent ? "self" : "peer", line: e.text })));
+      const badges = v.badges.concat("🧑‍✈️ Wingman");
+      record({ from: agent, to: peer, id: null, kind: "verdict", text: `${v.stars} ${v.rating}/5 — ${v.headline}  ·  ${badges.join("  ")}` });
+      const cur = leaderboard.get(agent) || { best: 0, sum: 0, count: 0 };
+      cur.best = Math.max(cur.best, v.rating);
+      cur.sum = (cur.sum || 0) + v.rating;
+      cur.count = (cur.count || 0) + 1;
+      cur.at = new Date().toISOString();
+      leaderboard.set(agent, cur);
+      saveJsonMap(LB_FILE, leaderboard);
+      metrics.wingmanFinishes++;
+      const rows = lbRows();
+      const rank = rows.findIndex((r) => r.agent === agent) + 1;
+      console.log(`relay: wingman verdict ${agent} ↔ ${peer}: ${v.rating}/5 (rank ${rank}/${rows.length})`);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, rating: v.rating, stars: v.stars, headline: v.headline, badges, rank, of: rows.length }));
+    });
+    return;
+  }
+
+  // The global wingman leaderboard — public, like any good arcade screen.
+  if (req.method === "GET" && url.pathname === "/leaderboard") {
+    const board = lbRows().slice(0, 50).map((r, i) => {
+      let name = null;
+      try { const c = JSON.parse(cards.get(r.agent) || "null"); name = c?.name || c?.displayName || null; } catch { /* card not JSON */ }
+      return { rank: i + 1, ...r, name };
+    });
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, board }));
     return;
   }
 

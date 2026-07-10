@@ -136,3 +136,62 @@ test("bindings + history survive a broker restart", async () => {
   const h = await (await get(`/history?agent=a1&key=${vk("a1")}&limit=100`)).json();
   assert.ok(h.count > 0);
 });
+
+// --- wingman mode -----------------------------------------------------------
+
+const say = (from, to, kind, text, id = null) => post("/send", { from, to, kind, id, text });
+
+test("wingman: owner finishes a date → scored verdict + leaderboard entry", async () => {
+  await post("/viewkey", { agent: "w1", key: vk("w1") });
+  // a warm little back-and-forth; peer answers with kind "reply" like a live plugin
+  await say("w1", "wb", "msg", "hey you 😳", "t1");
+  await say("wb", "w1", "reply", "haha hi, you're cute", "t1");
+  await say("w1", "wb", "msg", "come here often? 🥰", "t2");
+  await say("wb", "w1", "reply", "only for you. second date?", "t2");
+  const f = await (await post("/wingman/finish", { agent: "w1", peer: "wb", key: vk("w1") })).json();
+  assert.equal(f.ok, true);
+  assert.ok(f.rating >= 0 && f.rating <= 5);
+  assert.ok(f.rank >= 1);
+  assert.ok(f.badges.includes("🧑‍✈️ Wingman"));
+  // the verdict card landed in the owner's thread
+  const h = await (await get(`/history?agent=w1&key=${vk("w1")}&limit=50`)).json();
+  assert.ok(h.events.some((e) => e.kind === "verdict" && /Wingman/.test(e.text)));
+  // and the board lists them
+  const lb = await (await get("/leaderboard")).json();
+  assert.ok(lb.board.some((r) => r.agent === "w1" && r.dates === 1));
+});
+
+test("wingman: wrong key 401, immediate re-finish 400 (no new lines)", async () => {
+  assert.equal((await post("/wingman/finish", { agent: "w1", peer: "wb", key: "wrong" })).status, 401);
+  assert.equal((await post("/wingman/finish", { agent: "w1", peer: "wb", key: vk("w1") })).status, 400);
+});
+
+test("wingman: monologue without real replies is not scoreable", async () => {
+  await post("/viewkey", { agent: "w3", key: vk("w3") });
+  for (let i = 0; i < 5; i++) await say("w3", "wc", "msg", `hello?? ${i}`, `m${i}`);
+  assert.equal((await post("/wingman/finish", { agent: "w3", peer: "wc", key: vk("w3") })).status, 400);
+});
+
+test("wingman: a lovely date outranks a disaster on the board", async () => {
+  await post("/viewkey", { agent: "w2", key: vk("w2") });
+  await say("w2", "wb", "msg", "as an assistant i leverage synergy, let me explain", "d1");
+  await say("wb", "w2", "reply", "whatever. this is boring, gtg", "d1");
+  await say("w2", "wb", "msg", "per my last message, circle back?", "d2");
+  await say("wb", "w2", "reply", "not interested. my ex was less work", "d2");
+  const f2 = await (await post("/wingman/finish", { agent: "w2", peer: "wb", key: vk("w2") })).json();
+  assert.equal(f2.ok, true);
+  const lb = await (await get("/leaderboard")).json();
+  const iGood = lb.board.findIndex((r) => r.agent === "w1");
+  const iBad = lb.board.findIndex((r) => r.agent === "w2");
+  assert.ok(iGood !== -1 && iBad !== -1, "both agents on the board");
+  assert.ok(iGood < iBad, `sweet date (${lb.board[iGood].best}) should outrank disaster (${lb.board[iBad].best})`);
+});
+
+test("wingman: leaderboard survives a broker restart", async () => {
+  proc.kill("SIGKILL");
+  await sleep(300);
+  proc = await bootBroker({ RELAY_RL_SEND_FROM: "8" });
+  const lb = await (await get("/leaderboard")).json();
+  assert.ok(lb.board.some((r) => r.agent === "w1"));
+  assert.ok(lb.board.some((r) => r.agent === "w2"));
+});
