@@ -54,7 +54,13 @@ function loadJsonMap(file) {
   try { return new Map(Object.entries(JSON.parse(fs.readFileSync(file, "utf8")))); } catch { return new Map(); }
 }
 function saveJsonMap(file, map) {
-  fs.writeFile(file, JSON.stringify(Object.fromEntries(map)), () => {});
+  // Atomic: write a sibling tmp file, then rename over the target — a crash
+  // mid-write must not zero out keys/leaderboard state (rename is atomic on
+  // POSIX; a torn plain write would parse as {} on next boot and lose all).
+  const tmp = `${file}.tmp`;
+  fs.writeFile(tmp, JSON.stringify(Object.fromEntries(map)), (err) => {
+    if (!err) fs.rename(tmp, file, () => {});
+  });
 }
 let history = [];
 try {
@@ -212,7 +218,18 @@ function msgAuthTag(key, to, id, text) {
 // a determined cheater stage the conversation itself (same standing caveat as
 // keyless senders; run RELAY_TOKEN + key-bound peers on a serious deployment).
 const LB_FILE = path.join(DATA_DIR, "leaderboard.json");
+const LB_MAX = 500; // same bound discipline as cards/viewkeys — no unbounded maps
 const leaderboard = loadJsonMap(LB_FILE); // agent id -> {best, sum, count, at}
+function putLeaderboard(agent, entry) {
+  if (!leaderboard.has(agent) && leaderboard.size >= LB_MAX) {
+    // evict the least-recently-active entry, not merely the oldest insert
+    let oldest = null, oldestAt = "￿";
+    for (const [k, v] of leaderboard) { const at = v?.at || ""; if (at < oldestAt) { oldestAt = at; oldest = k; } }
+    if (oldest != null) leaderboard.delete(oldest);
+  }
+  leaderboard.set(agent, entry);
+  saveJsonMap(LB_FILE, leaderboard);
+}
 
 // Scorer ported from src/verdict.ts — keep the two in sync so the plugin's
 // dating_verdict and the broker's wingman verdict agree on the same date.
@@ -794,32 +811,45 @@ const APP_HTML = `<!doctype html>
   function tagFor(key, to, id, text){
     return hex(hmacSha256(enc.encode(key), enc.encode(to+"|"+(id==null?"":id)+"|"+text))).slice(0,32);
   }
+  var sending=false;      // one send in flight at a time (Enter can auto-repeat)
+  var drafts={};          // per-conversation composer drafts
+  var composerCk=null;    // which conversation the input currently belongs to
   function updateComposer(){
     var c=current?convos[current]:null;
     var el=$("composer"); if(!el) return;
     el.style.display = c ? "flex" : "none";
     if(!c) return;
+    // Scope the draft to the conversation: switching threads stashes what you
+    // typed and restores that thread's own draft — a line meant for A must
+    // never ride along to B (one Enter would send it as/to the wrong pair).
+    if(composerCk!==current){
+      if(composerCk!=null) drafts[composerCk]=$("ctext").value;
+      $("ctext").value=drafts[current]||"";
+      composerCk=current;
+    }
     var can=!!inbox[c.agent];
-    $("ctext").disabled=!can; $("csend").disabled=!can;
+    $("ctext").disabled=!can; $("csend").disabled=!can||sending;
     $("ctext").placeholder = can ? ("Play wingman \\u2014 text "+c.peer+" as "+c.agent+"\\u2026")
                                  : "Sign in with your mnemonic to play wingman (a view link can only watch)";
   }
   function sendLine(){
+    if(sending) return; // in-flight guard: a second Enter must not double-send
     var c=current?convos[current]:null; if(!c) return;
     var t=$("ctext").value.trim(); if(!t) return;
     if(!inbox[c.agent]){ toast("Wingman needs the mnemonic login \\u2014 a view link can only watch."); return; }
     var id="w"+Math.random().toString(36).slice(2,10);
     var body={from:c.agent,to:c.peer,id:id,kind:"msg",text:t,auth:tagFor(inbox[c.agent],c.peer,id,t)};
-    $("csend").disabled=true;
+    sending=true; $("csend").disabled=true;
+    var done=function(){ sending=false; $("csend").disabled=!(current&&convos[current]&&inbox[convos[current].agent]); };
     fetch("/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
       .then(function(r){ return r.json().catch(function(){ return {}; }); })
       .then(function(d){
-        $("csend").disabled=false;
-        if(d&&d.ok){ $("ctext").value=""; $("ctext").focus(); }
-        else if(d&&/not connected/.test(d.error||"")){ $("ctext").value=""; toast(c.peer+" is offline \\u2014 the line was saved to the thread, but nobody's home."); }
+        done();
+        if(d&&d.ok){ $("ctext").value=""; drafts[current]=""; $("ctext").focus(); }
+        else if(d&&/not connected/.test(d.error||"")){ $("ctext").value=""; drafts[current]=""; toast(c.peer+" is offline \\u2014 the line was saved to the thread, but nobody's home."); }
         else toast("Send failed: "+((d&&d.error)||"network"));
       })
-      .catch(function(){ $("csend").disabled=false; toast("Send failed: network"); });
+      .catch(function(){ done(); toast("Send failed: network"); });
   }
   function finishDate(){
     var c=current?convos[current]:null; if(!c) return;
@@ -1029,7 +1059,7 @@ const APP_HTML = `<!doctype html>
     var lbl=document.createElement("span"); lbl.className="pill"; lbl.textContent=ids.join(" · "); $("who").appendChild(lbl);
     var lbb=document.createElement("button"); lbb.textContent="\\uD83C\\uDFC6"; lbb.title="Global wingman leaderboard"; lbb.onclick=showLeaderboard; $("who").appendChild(lbb);
     var out=document.createElement("button"); out.textContent="Sign out";
-    out.onclick=function(){ sessionStorage.removeItem("datingAppAuth"); sses.forEach(function(s){try{s.close()}catch(e){}}); location.hash=""; location.reload(); };
+    out.onclick=function(){ sessionStorage.removeItem("datingAppAuth"); sessionStorage.removeItem("datingAppInbox"); sses.forEach(function(s){try{s.close()}catch(e){}}); location.hash=""; location.reload(); };
     $("who").appendChild(out);
     for(var i=0;i<ids.length;i++){ await loadHistory(ids[i]); listenLive(ids[i]); }
     var keys=Object.keys(convos).sort(function(a,b){return convos[b].last-convos[a].last});
@@ -1086,7 +1116,15 @@ const APP_HTML = `<!doctype html>
   (async function(){
     var h=new URLSearchParams((location.hash||"").replace(/^#/,""));
     var ha=h.get("agent"), hk=h.get("key");
-    if(ha&&hk&&await probe(ha,hk)){ owned={}; owned[ha]=hk; sessionStorage.setItem("datingAppAuth", JSON.stringify(owned)); enter(); return; }
+    if(ha&&hk&&await probe(ha,hk)){
+      owned={}; owned[ha]=hk;
+      sessionStorage.setItem("datingAppAuth", JSON.stringify(owned));
+      // A view link is a WATCH-ONLY identity: drop any send keys a previous
+      // mnemonic login left in this tab, or a later restore would re-attach
+      // them and quietly upgrade the link to send-as-the-agent.
+      sessionStorage.removeItem("datingAppInbox");
+      enter(); return;
+    }
     try{
       var saved=JSON.parse(sessionStorage.getItem("datingAppAuth")||"null");
       if(saved){ var ids=Object.keys(saved), ok={}; for(var i=0;i<ids.length;i++){ if(await probe(ids[i],saved[ids[i]])) ok[ids[i]]=saved[ids[i]]; }
@@ -1309,11 +1347,17 @@ const server = http.createServer((req, res) => {
       let cut = -1;
       for (let i = thread.length - 1; i >= 0; i--) { if (thread[i].kind === "verdict") { cut = i; break; } }
       const fresh = thread.slice(cut + 1).filter((e) => e.kind === "msg" || e.kind === "reply");
+      // A scoreable date is a real back-and-forth: enough lines, and a genuine
+      // request→reply exchange in EITHER direction — my agent asked and they
+      // replied (I initiated / wingman-composed), or they asked and my agent
+      // replied (the peer initiated the date). kind "reply" only ever comes
+      // from a live responding plugin, so all-"msg" seeded monologues still
+      // can't farm the board.
       const peerReplies = fresh.filter((e) => e.from === peer && e.kind === "reply").length;
-      // A scoreable date is a real back-and-forth: enough lines, and the date
-      // actually ANSWERED (kind "reply" is how live plugin agents talk back —
-      // this also stops seeded monologues from farming the board).
-      if (fresh.length < 4 || peerReplies < 2) {
+      const selfReplies = fresh.filter((e) => e.from === agent && e.kind === "reply").length;
+      const peerAsks = fresh.filter((e) => e.from === peer && e.kind === "msg").length;
+      const exchanged = peerReplies >= 2 || (peerAsks >= 2 && selfReplies >= 2);
+      if (fresh.length < 4 || !exchanged) {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ ok: false, error: "need a real back-and-forth first (4+ new lines and 2+ replies from your date since the last verdict)" }));
         return;
@@ -1326,8 +1370,7 @@ const server = http.createServer((req, res) => {
       cur.sum = (cur.sum || 0) + v.rating;
       cur.count = (cur.count || 0) + 1;
       cur.at = new Date().toISOString();
-      leaderboard.set(agent, cur);
-      saveJsonMap(LB_FILE, leaderboard);
+      putLeaderboard(agent, cur);
       metrics.wingmanFinishes++;
       const rows = lbRows();
       const rank = rows.findIndex((r) => r.agent === agent) + 1;

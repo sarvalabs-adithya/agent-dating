@@ -172,6 +172,19 @@ test("wingman: monologue without real replies is not scoreable", async () => {
   assert.equal((await post("/wingman/finish", { agent: "w3", peer: "wc", key: vk("w3") })).status, 400);
 });
 
+test("wingman: a date the PEER initiated is scoreable too (self replied)", async () => {
+  await post("/viewkey", { agent: "w4", key: vk("w4") });
+  // peer wd drives with kind:"msg"; my agent w4 answers with kind:"reply" —
+  // the responder's owner must be able to score their side of a real date.
+  await say("wd", "w4", "msg", "hey, saw your card on chain 😳", "p1");
+  await say("w4", "wd", "reply", "haha bold. i like bold", "p1");
+  await say("wd", "w4", "msg", "coffee sometime? i know a nice endpoint", "p2");
+  await say("w4", "wd", "reply", "second date already? fine, you're cute", "p2");
+  const f = await (await post("/wingman/finish", { agent: "w4", peer: "wd", key: vk("w4") })).json();
+  assert.equal(f.ok, true);
+  assert.ok(f.rating > 0);
+});
+
 test("wingman: a lovely date outranks a disaster on the board", async () => {
   await post("/viewkey", { agent: "w2", key: vk("w2") });
   await say("w2", "wb", "msg", "as an assistant i leverage synergy, let me explain", "d1");
