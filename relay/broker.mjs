@@ -466,8 +466,8 @@ const APP_HTML = `<!doctype html>
    --in:#efedf3;--btn:#181423;--btn-ink:#ffffff;--shadow:0 1px 10px rgba(24,20,35,.06);
    --warn-bg:#fbf2d9;--warn-border:#ecdca0;--warn-ink:#8a6d15;
    --toast-bg:#181423;--toast-ink:#ffffff;--ovl-bg:rgba(24,20,35,.42);
-   --glass:rgba(255,255,255,.72);--grad-a:#4646e0;--grad-b:#8b3df0;
-   --hdr:64px;--r-panel:24px;--r-bubble:18px;
+   --glass:rgba(255,255,255,.8);--grad-a:#2e3ad1;--grad-b:#7d3bec;
+   --hdr:64px;--thead:72px;--r-panel:24px;--r-bubble:18px;
  }
  /* night mode — same identity after dark: deeper violet grounds, a lighter
     plum so the accent keeps contrast, bubbles stay plum-on-dark. Follows the
@@ -478,7 +478,7 @@ const APP_HTML = `<!doctype html>
    --in:#282133;--btn:#9d7bff;--btn-ink:#181423;--shadow:0 1px 12px rgba(0,0,0,.45);
    --warn-bg:#332a13;--warn-border:#584a20;--warn-ink:#e8c96d;
    --toast-bg:#f0edf6;--toast-ink:#181423;--ovl-bg:rgba(8,6,12,.6);
-   --glass:rgba(24,20,33,.66);
+   --glass:rgba(22,18,30,.76);
  }}
  :root[data-theme="light"]{
    --cream:#f6f4f1;--paper:#ffffff;--ink:#181423;--muted:#8a8496;--line:#e9e6ef;
@@ -486,7 +486,7 @@ const APP_HTML = `<!doctype html>
    --in:#efedf3;--btn:#181423;--btn-ink:#ffffff;--shadow:0 1px 10px rgba(24,20,35,.06);
    --warn-bg:#fbf2d9;--warn-border:#ecdca0;--warn-ink:#8a6d15;
    --toast-bg:#181423;--toast-ink:#ffffff;--ovl-bg:rgba(24,20,35,.42);
-   --glass:rgba(255,255,255,.72);
+   --glass:rgba(255,255,255,.8);
  }
  :root[data-theme="dark"]{
    --cream:#151119;--paper:#1e1927;--ink:#f0edf6;--muted:#9c94ac;--line:#2f2839;
@@ -494,7 +494,7 @@ const APP_HTML = `<!doctype html>
    --in:#282133;--btn:#9d7bff;--btn-ink:#181423;--shadow:0 1px 12px rgba(0,0,0,.45);
    --warn-bg:#332a13;--warn-border:#584a20;--warn-ink:#e8c96d;
    --toast-bg:#f0edf6;--toast-ink:#181423;--ovl-bg:rgba(8,6,12,.6);
-   --glass:rgba(24,20,33,.66);
+   --glass:rgba(22,18,30,.76);
  }
  *{box-sizing:border-box} html,body{margin:0;height:100%}
  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--cream);color:var(--ink);-webkit-font-smoothing:antialiased}
@@ -504,7 +504,7 @@ const APP_HTML = `<!doctype html>
  ::-webkit-scrollbar{width:8px;height:8px} ::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
  ::-webkit-scrollbar-thumb:hover{background:var(--muted)} ::-webkit-scrollbar-track{background:transparent}
  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
- header{background:var(--glass);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);border-bottom:1px solid var(--line);height:var(--hdr);padding:0 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+ header{background:var(--glass);backdrop-filter:blur(14px) saturate(1.35);-webkit-backdrop-filter:blur(14px) saturate(1.35);border-bottom:1px solid var(--line);height:var(--hdr);padding:0 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10}
  @supports not (backdrop-filter:blur(1px)){ header{background:var(--paper)} .pane-head{background:var(--paper)!important} .composer{background:var(--paper)!important} }
  header h1{font-size:21px;margin:0;font-weight:700}
  header .logo{color:var(--rose);font-size:20px;line-height:1}
@@ -542,9 +542,11 @@ const APP_HTML = `<!doctype html>
  .none{color:var(--muted);text-align:center;padding:56px 22px;font-size:14px;line-height:1.6}
  .none .big{font-size:32px;display:block;margin-bottom:8px}
  .pane{flex:1;background:var(--cream);position:relative;min-width:0}
- .pane-head{position:absolute;top:0;left:0;right:0;z-index:3;background:var(--glass);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);padding:11px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;min-height:64px}
- .pane-head .h-nm{font-weight:700;font-size:16px} .pane-head .h-sub{font-size:12px;color:var(--muted);margin-top:1px}
- .msgs{position:absolute;inset:0;overflow-y:auto;padding:calc(var(--hdr) + 16px) 20px 84px;display:flex;flex-direction:column;gap:10px}
+ .pane-head{position:absolute;top:0;left:0;right:0;z-index:6;background:var(--glass);backdrop-filter:blur(14px) saturate(1.35);-webkit-backdrop-filter:blur(14px) saturate(1.35);padding:0 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;height:var(--thead)}
+ .pane-head>div:not(.av){flex:1;min-width:0}
+ .pane-head .h-nm{font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .pane-head .h-sub{font-size:12px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .msgs{position:absolute;inset:0;overflow-y:auto;padding:calc(var(--thead) + 20px) 20px 88px;display:flex;flex-direction:column;gap:10px}
  .row{display:flex;align-items:flex-end;gap:8px} .row.out{justify-content:flex-end}
  .bubble{max-width:min(72%,460px);padding:10px 15px;border-radius:var(--r-bubble);font-size:15px;line-height:1.45;word-wrap:break-word;overflow-wrap:anywhere}
  .row.in .bubble{background:var(--in);border-bottom-left-radius:6px}
@@ -568,7 +570,7 @@ const APP_HTML = `<!doctype html>
  /* burst / double-text: the 2nd bubble hugs the first */
  .row.cont{margin-top:-7px}
  /* wingman composer — one control language: two quiet circles + one loud send */
- .composer{display:none;position:absolute;bottom:0;left:0;right:0;z-index:3;gap:8px;padding:10px 14px;background:var(--glass);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);border-top:1px solid var(--line);align-items:center}
+ .composer{display:none;position:absolute;bottom:0;left:0;right:0;z-index:6;gap:8px;padding:10px 14px;background:var(--glass);backdrop-filter:blur(14px) saturate(1.35);-webkit-backdrop-filter:blur(14px) saturate(1.35);border-top:1px solid var(--line);align-items:center}
  .composer input{flex:1;min-width:0;border:1px solid var(--line);background:var(--cream);border-radius:999px;height:44px;padding:0 18px;font-size:14.5px;color:var(--ink);outline:none;font-family:inherit;transition:border-color .12s,box-shadow .12s}
  .composer input:focus{border-color:var(--plum);box-shadow:0 0 0 3px var(--plum-soft)}
  .composer button{border:1px solid var(--line);border-radius:50%;width:44px;height:44px;font-size:17px;line-height:1;cursor:pointer;background:var(--paper);color:var(--plum);flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;padding:0;transition:background .12s,transform .06s}
