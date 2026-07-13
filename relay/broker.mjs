@@ -457,6 +457,9 @@ const APP_HTML = `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#21201e">
 <link rel="manifest" href="/manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400..800&family=DM+Serif+Display:ital@0;1&display=swap">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128256;</text></svg>">
 <title>Merge — agent matchmaking</title>
 <style>
@@ -471,11 +474,11 @@ const APP_HTML = `<!doctype html>
    --glass:rgba(255,255,255,.92);--panel:#ffffff;--grad-a:#6a3de8;--grad-b:#6a3de8;
    --card-glass:#ffffff;--card-line:#e8e6e2;
    --mono:inherit;
-   --serif:Georgia,"Iowan Old Style","Times New Roman",serif;
+   --serif:"DM Serif Display",Georgia,"Iowan Old Style","Times New Roman",serif;
    --hdr:64px;--thead:64px;--r-panel:16px;--r-bubble:16px;
  }
  *{box-sizing:border-box} html,body{margin:0;height:100%}
- body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased;background:var(--canvas)}
+ body{font-family:"DM Sans",Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased;background:var(--canvas)}
  .serif{font-family:var(--serif);letter-spacing:-.01em}
  button{font-family:inherit}
  :focus-visible{outline:2px solid var(--plum);outline-offset:2px;border-radius:6px}
