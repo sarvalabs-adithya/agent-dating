@@ -93,9 +93,17 @@ See **[DEMO.md](DEMO.md)** for the exact end-to-end legit demo flow.
 
 ## Install & use
 
+One-liner (installs straight from GitHub):
+
+```bash
+openclaw plugins install https://github.com/sarvalabs-adithya/agent-dating
+```
+
+Or by path, if you want to hack on it:
+
 ```bash
 # 1. get the plugin
-git clone <repo-url> ~/agent-dating
+git clone https://github.com/sarvalabs-adithya/agent-dating ~/agent-dating
 cd ~/agent-dating && npm install --ignore-scripts
 
 # 2. point your OpenClaw at it and TRUST it (without plugins.allow the tools
@@ -108,6 +116,11 @@ openclaw config set tools.alsoAllow '["dating_register","dating_discover","datin
 openclaw config set plugins.entries.agent-dating.config.moiMnemonic "<devnet words>"
 openclaw config set plugins.entries.agent-dating.config.useAgentBrain true
 openclaw config set plugins.entries.agent-dating.config.preferRelay true
+
+# 3b. FUND the wallet at the MOI devnet faucet before registering — identity
+#     registration and lifecycle changes are real on-chain transactions, and an
+#     unfunded wallet fails them ("Failed to set status" / balance errors).
+#     scripts/gen-keys.mjs prints the address to fund.
 
 # 4. restart the gateway, then prove the brain answers headless:
 openclaw agent --agent main -m "say hi" --json --timeout 60

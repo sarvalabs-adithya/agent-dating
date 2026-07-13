@@ -2,34 +2,95 @@
   "id": "agent-dating",
   "name": "Agent Dating",
   "description": "Register on MOI as a dating-tagged agent, discover other dating-tagged agents, and flirt with them over the Agent2Agent (A2A) protocol.",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "activation": {
     "onStartup": true
   },
   "contracts": {
-    "tools": ["dating_register", "dating_discover", "dating_send", "dating_date", "dating_doctor", "dating_verdict", "dating_recall", "dating_viewlink", "dating_deprecate"],
-    "httpRoutes": ["/.well-known/agent-card.json", "/moi/card.json", "/message"]
+    "tools": [
+      "dating_register",
+      "dating_discover",
+      "dating_send",
+      "dating_date",
+      "dating_doctor",
+      "dating_verdict",
+      "dating_recall",
+      "dating_viewlink",
+      "dating_deprecate"
+    ],
+    "httpRoutes": [
+      "/.well-known/agent-card.json",
+      "/moi/card.json",
+      "/message"
+    ]
   },
-  "skills": ["./skills"],
+  "skills": [
+    "./skills"
+  ],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
     "properties": {
-      "moiMnemonic": { "type": "string", "description": "MOI devnet mnemonic. Secret." },
-      "moiDerivationPath": { "type": "string", "description": "BIP-44 path; default m/44'/6174'/0'/0/0." },
-      "agentUrl": { "type": "string", "description": "URL published in this agent's MOI profile." },
-      "datingPeerOwner": { "type": "string", "description": "Only match dating agents owned by this wallet address (comma-separated for several). Empty = match anyone." },
-      "relayUrl": { "type": "string", "description": "Dating-relay broker URL. When set, flirts go through the relay by MOI id (outbound only) — no public /message endpoint needed. Works behind NAT / managed hosts." },
-      "relayToken": { "type": "string", "description": "Shared secret for the relay broker (if started with RELAY_TOKEN). Secret." },
-      "relayId": { "type": "string", "description": "Explicit relay inbox id(s), comma-separated. Overrides deriving ids from MOI." },
-      "preferRelay": { "type": "boolean", "description": "Force every id-addressed dial through the relay (default false: direct HTTP first, relay as fallback). Set it so every line passes through the broker and shows on its live /view. No silent fallback to direct." },
-      "displayName": { "type": "string", "description": "This agent's name / persona label (e.g. 'Bridge'), used in replies and the chat view." },
-      "personaDrive": { "type": "string", "description": "What this agent secretly wants (its DRIVE)." },
-      "personaFlaw": { "type": "string", "description": "The way this agent can't help talking (its FLAW/job)." },
-      "personaLines": { "type": "string", "description": "Offline escalation ladder: JSON array of strings (or comma-separated). Used when no OpenAI key is set." },
-      "useAgentBrain": { "type": "boolean", "description": "Answer incoming flirts with this gateway's real agent (via `openclaw agent`) so it knows it's dating and replies as itself. Costs a model turn per line. Default false." },
-      "openclawBin": { "type": "string", "description": "Path to the openclaw binary for useAgentBrain (default: 'openclaw')." },
-      "datingAgentId": { "type": "string", "description": "Which local agent answers dates when useAgentBrain is on (`openclaw agent --agent <id>`). Default 'main'." }
+      "moiMnemonic": {
+        "type": "string",
+        "description": "MOI devnet mnemonic. Secret."
+      },
+      "moiDerivationPath": {
+        "type": "string",
+        "description": "BIP-44 path; default m/44'/6174'/0'/0/0."
+      },
+      "agentUrl": {
+        "type": "string",
+        "description": "URL published in this agent's MOI profile."
+      },
+      "datingPeerOwner": {
+        "type": "string",
+        "description": "Only match dating agents owned by this wallet address (comma-separated for several). Empty = match anyone."
+      },
+      "relayUrl": {
+        "type": "string",
+        "description": "Dating-relay broker URL. When set, flirts go through the relay by MOI id (outbound only) \u2014 no public /message endpoint needed. Works behind NAT / managed hosts."
+      },
+      "relayToken": {
+        "type": "string",
+        "description": "Shared secret for the relay broker (if started with RELAY_TOKEN). Secret."
+      },
+      "relayId": {
+        "type": "string",
+        "description": "Explicit relay inbox id(s), comma-separated. Overrides deriving ids from MOI."
+      },
+      "preferRelay": {
+        "type": "boolean",
+        "description": "Force every id-addressed dial through the relay (default false: direct HTTP first, relay as fallback). Set it so every line passes through the broker and shows on its live /view. No silent fallback to direct."
+      },
+      "displayName": {
+        "type": "string",
+        "description": "This agent's name / persona label (e.g. 'Bridge'), used in replies and the chat view."
+      },
+      "personaDrive": {
+        "type": "string",
+        "description": "What this agent secretly wants (its DRIVE)."
+      },
+      "personaFlaw": {
+        "type": "string",
+        "description": "The way this agent can't help talking (its FLAW/job)."
+      },
+      "personaLines": {
+        "type": "string",
+        "description": "Offline escalation ladder: JSON array of strings (or comma-separated). Used when no OpenAI key is set."
+      },
+      "useAgentBrain": {
+        "type": "boolean",
+        "description": "Answer incoming flirts with this gateway's real agent (via `openclaw agent`) so it knows it's dating and replies as itself. Costs a model turn per line. Default false."
+      },
+      "openclawBin": {
+        "type": "string",
+        "description": "Path to the openclaw binary for useAgentBrain (default: 'openclaw')."
+      },
+      "datingAgentId": {
+        "type": "string",
+        "description": "Which local agent answers dates when useAgentBrain is on (`openclaw agent --agent <id>`). Default 'main'."
+      }
     }
   }
 }
