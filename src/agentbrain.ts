@@ -26,8 +26,18 @@ export interface AgentBrainOpts {
   timeoutMs?: number;
 }
 
-/** Run one real agent turn on `message` and return the agent's reply text. */
-export async function runAgentReply(message: string, opts: AgentBrainOpts): Promise<string> {
+/** Token usage of one brain turn, when the CLI reports it (else null). */
+export interface BrainUsage {
+  input: number;
+  output: number;
+  total: number;
+}
+
+/** Run one real agent turn on `message`; returns the reply text + token usage. */
+export async function runAgentReply(
+  message: string,
+  opts: AgentBrainOpts,
+): Promise<{ text: string; usage: BrainUsage | null }> {
   const bin = opts.bin || "openclaw";
   const timeoutMs = opts.timeoutMs ?? 90000;
   const args = [
@@ -39,7 +49,7 @@ export async function runAgentReply(message: string, opts: AgentBrainOpts): Prom
   ];
   if (opts.agentId) args.push("--agent", opts.agentId);
 
-  return await new Promise<string>((resolve, reject) => {
+  return await new Promise<{ text: string; usage: BrainUsage | null }>((resolve, reject) => {
     // AGENT_DATING_NO_RELAY: if this spawn can't reach the gateway and falls
     // back to an embedded agent, that embedded copy must NOT load the relay —
     // it would claim this agent's inbox id and evict the caller's stream
@@ -60,10 +70,40 @@ export async function runAgentReply(message: string, opts: AgentBrainOpts): Prom
     child.on("close", (code) => {
       clearTimeout(killer);
       const text = extractReply(out);
-      if (text) return resolve(text);
+      if (text) return resolve({ text, usage: extractUsage(out) });
       reject(new Error(`agent turn produced no reply (exit ${code}). ${err.slice(0, 240) || out.slice(0, 240)}`));
     });
   });
+}
+
+/**
+ * Pull token usage out of the `--json` output. The gateway reports accumulated
+ * run usage as { input, output, cacheRead, cacheWrite, total } — probe the
+ * likely homes defensively (result / result meta / top level) and normalize.
+ * Null when the CLI didn't report usage; callers must treat that honestly
+ * (an "unknown" turn, not a free one).
+ */
+export function extractUsage(raw: string): BrainUsage | null {
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  let d: any;
+  try { d = JSON.parse(raw.slice(start, end + 1)); } catch { return null; }
+  const candidates = [
+    d?.result?.usage, d?.result?.meta?.usage, d?.result?.agentMeta?.usage,
+    d?.usage, d?.meta?.usage, d?.result?.lastCallUsage,
+  ];
+  for (const u of candidates) {
+    if (!u || typeof u !== "object") continue;
+    const input = Number(u.input ?? u.input_tokens ?? u.inputTokens ?? u.promptTokens ?? NaN);
+    const output = Number(u.output ?? u.output_tokens ?? u.outputTokens ?? u.completionTokens ?? NaN);
+    if (!Number.isFinite(input) && !Number.isFinite(output)) continue;
+    const inN = Number.isFinite(input) ? input : 0;
+    const outN = Number.isFinite(output) ? output : 0;
+    const total = Number(u.total ?? NaN);
+    return { input: inN, output: outN, total: Number.isFinite(total) ? total : inN + outN };
+  }
+  return null;
 }
 
 /**

@@ -280,12 +280,15 @@ export default definePluginEntry({
           // turn with "No target session selected". Keep one session per date so
           // the agent remembers the conversation.
           const agentId = config().datingAgentId || "main";
-          line = await runAgentReply(datePrompt(name, text, brainPersona()), {
+          const turn = await runAgentReply(datePrompt(name, text, brainPersona()), {
             bin: config().openclawBin,
             agentId,
             sessionKey: `agent:${agentId}:dating:${fromId}`,
             timeoutMs: 90000,
           });
+          line = turn.text;
+          // The responder pays per incoming line, on its own key — say so.
+          if (turn.usage) console.log(`agent-dating: brain reply cost — in ${turn.usage.input} / out ${turn.usage.output} tokens (answering ${name})`);
         } catch (e: any) {
           console.warn(`agent-dating: useAgentBrain turn failed (${e?.message || e}); using flirt.ts.`);
           line = await nextFlirtLine(history, myPersona());
@@ -750,6 +753,16 @@ export default definePluginEntry({
         const transcript: Array<{ from: "self" | "peer"; name: string; line: string }> = [];
         let via: "relay" | "http" = "http";
 
+        // TOKEN COST: what this date costs THIS side, measured (not guessed) —
+        // one brain turn per line we author, usage read from the CLI's --json.
+        // Turns whose usage the CLI omits count as "unknown", never as free.
+        const dateUsage = { brainTurns: 0, inputTokens: 0, outputTokens: 0, unknownTurns: 0 };
+        const addDateUsage = (u: { input: number; output: number } | null): void => {
+          dateUsage.brainTurns++;
+          if (u) { dateUsage.inputTokens += u.input; dateUsage.outputTokens += u.output; }
+          else dateUsage.unknownTurns++;
+        };
+
         // WINGMAN AWARENESS: mid-date, the owner can interject lines from the
         // /app (sent AS this agent through the broker). The loop only knows
         // lines it authored — so at each turn boundary, pull the thread from
@@ -826,12 +839,14 @@ export default definePluginEntry({
               let last: string | null = null;
               for (let k = history.length - 1; k >= 0; k--) { if (history[k].who !== selfName()) { last = history[k].line; break; } }
               const prompt = last ? datePrompt(peerName, last, brainPersona()) : openerPrompt(peerName, brainPersona());
-              return await runAgentReply(prompt, {
+              const turn = await runAgentReply(prompt, {
                 bin: config().openclawBin,
                 agentId,
                 sessionKey: `agent:${agentId}:dating-out:${dialTarget}`,
                 timeoutMs: 90000,
               });
+              addDateUsage(turn.usage);
+              return turn.text;
             } catch (e: any) {
               console.warn(`agent-dating: useAgentBrain (finder) failed (${e?.message || e}); using flirt.ts.`);
             }
@@ -879,12 +894,14 @@ export default definePluginEntry({
               const agentId = config().datingAgentId || "main";
               let last: string | null = null;
               for (let k = history.length - 1; k >= 0; k--) { if (history[k].who !== selfName()) { last = history[k].line; break; } }
-              closer = await runAgentReply(closerPrompt(peerName, last, brainPersona()), {
+              const turn = await runAgentReply(closerPrompt(peerName, last, brainPersona()), {
                 bin: config().openclawBin,
                 agentId,
                 sessionKey: `agent:${agentId}:dating-out:${dialTarget}`,
                 timeoutMs: 90000,
               });
+              addDateUsage(turn.usage);
+              closer = turn.text;
             } catch (e: any) {
               console.warn(`agent-dating: useAgentBrain (closer) failed (${e?.message || e}); using a stock goodbye.`);
             }
@@ -931,12 +948,20 @@ export default definePluginEntry({
           });
         }
 
+        console.log(`agent-dating: date token cost (this side) — ${dateUsage.brainTurns} brain turns, in ${dateUsage.inputTokens} / out ${dateUsage.outputTokens} tokens${dateUsage.unknownTurns ? ` (${dateUsage.unknownTurns} turns unreported)` : ""}`);
         return {
           ok: true,
           peer: { target: dialTarget, name: peerName, via },
           lines: transcript.length,
           transcript,
           verdict,
+          tokenCost: {
+            side: "initiator",
+            ...dateUsage,
+            note: dateUsage.unknownTurns
+              ? "some turns did not report usage — the real cost is higher than this sum"
+              : "measured from the gateway's own usage accounting; the peer pays its own replies on its own key",
+          },
         };
       },
     });
