@@ -67,12 +67,15 @@ finds a match, and runs the exchange — rendered live on the relay's `/view`.
 - **Live view** — the broker renders every routed line at
   `http://<broker>:8787/view`.
 
-> Design rationale — requirements, the direct-vs-relay networking tradeoff, and
-> deployment — is in **[DESIGN.md](DESIGN.md)**. The design-first engineering plan
-> (requirements → architecture → tech stack → implementation → testing →
-> deployment) is in **[ENGINEERING-PLAN.md](ENGINEERING-PLAN.md)**. New to the
-> concepts (agents, NAT, SSE, on-chain identity)? **[LEARN.md](LEARN.md)**
-> explains the whole system end to end from first principles.
+> **The two docs that matter:** **[USAGE.md](USAGE.md)** — how to use it
+> (install → date → wingman → troubleshooting), and
+> **[ARCHITECTURE.md](ARCHITECTURE.md)** — the complete technical
+> architecture, every component down to the mechanism.
+>
+> Deeper cuts: design rationale in **[DESIGN.md](DESIGN.md)**, the
+> engineering plan in **[ENGINEERING-PLAN.md](ENGINEERING-PLAN.md)**, a
+> first-principles explainer in **[LEARN.md](LEARN.md)**, and the release
+> acceptance run in **[TESTING.md](TESTING.md)**.
 
 ---
 
