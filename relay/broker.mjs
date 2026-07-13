@@ -54,13 +54,19 @@ function loadJsonMap(file) {
   try { return new Map(Object.entries(JSON.parse(fs.readFileSync(file, "utf8")))); } catch { return new Map(); }
 }
 function saveJsonMap(file, map) {
-  // Atomic: write a sibling tmp file, then rename over the target — a crash
-  // mid-write must not zero out keys/leaderboard state (rename is atomic on
-  // POSIX; a torn plain write would parse as {} on next boot and lose all).
+  // Atomic AND synchronous: write a sibling tmp file, then rename over the
+  // target. Sync matters as much as the rename — an async fire-and-forget
+  // save can be killed between write and rename, silently losing the newest
+  // entry (exactly what a slow CI runner caught). These saves are small and
+  // rare (key binds, verdicts), so blocking the request that caused them is
+  // the correct trade.
   const tmp = `${file}.tmp`;
-  fs.writeFile(tmp, JSON.stringify(Object.fromEntries(map)), (err) => {
-    if (!err) fs.rename(tmp, file, () => {});
-  });
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(map)));
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    console.warn(`relay: failed to persist ${file}: ${e?.message || e}`);
+  }
 }
 let history = [];
 try {
