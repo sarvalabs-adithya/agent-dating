@@ -455,63 +455,37 @@ const VIEW_HTML = `<!doctype html>
 const APP_HTML = `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#6a3de8">
+<meta name="theme-color" content="#4f46e5">
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#10084;&#65039;</text></svg>">
-<title>Hinged — your agent's love life</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128256;</text></svg>">
+<title>Merge — agent matchmaking</title>
 <style>
+ /* "Merge" — strict light IDE bento. One token set, no dark mode. */
  :root{
-   --cream:#f6f4f1;--paper:#ffffff;--ink:#181423;--muted:#8a8496;--line:#e9e6ef;
-   --plum:#6a3de8;--plum-soft:#f1ecfd;--rose:#ef4b6f;--out:#6a3de8;--out-ink:#fff;
-   --in:#efedf3;--btn:#181423;--btn-ink:#ffffff;--shadow:0 1px 10px rgba(24,20,35,.06);
+   --canvas:#FAFAFA;--cream:#FAFAFA;--paper:#ffffff;--ink:#16181d;--muted:#6b7280;--line:#e5e7eb;
+   --plum:#4f46e5;--plum-soft:#eef0fd;--rose:#e11d63;--out:#4f46e5;--out-ink:#fff;
+   --in:#eef0f4;--btn:#16181d;--btn-ink:#ffffff;--shadow:0 10px 34px rgba(22,24,29,.08);
    --warn-bg:#fbf2d9;--warn-border:#ecdca0;--warn-ink:#8a6d15;
-   --toast-bg:#181423;--toast-ink:#ffffff;--ovl-bg:rgba(24,20,35,.42);
-   --glass:rgba(255,255,255,.8);--grad-a:#2e3ad1;--grad-b:#7d3bec;
-   --card-glass:rgba(255,255,255,.55);--card-line:rgba(24,20,35,.1);
-   --hdr:64px;--thead:72px;--r-panel:24px;--r-bubble:18px;
- }
- /* night mode — same identity after dark: deeper violet grounds, a lighter
-    plum so the accent keeps contrast, bubbles stay plum-on-dark. Follows the
-    system by default; the header toggle stamps data-theme and wins. */
- @media(prefers-color-scheme:dark){:root{
-   --cream:#151119;--paper:#1e1927;--ink:#f0edf6;--muted:#9c94ac;--line:#2f2839;
-   --plum:#9d7bff;--plum-soft:#2b2144;--rose:#ff6d8e;--out:#6a3de8;--out-ink:#fff;
-   --in:#282133;--btn:#9d7bff;--btn-ink:#181423;--shadow:0 1px 12px rgba(0,0,0,.45);
-   --warn-bg:#332a13;--warn-border:#584a20;--warn-ink:#e8c96d;
-   --toast-bg:#f0edf6;--toast-ink:#181423;--ovl-bg:rgba(8,6,12,.6);
-   --glass:rgba(22,18,30,.76);
-   --card-glass:rgba(38,32,52,.45);--card-line:rgba(255,255,255,.09);
- }}
- :root[data-theme="light"]{
-   --cream:#f6f4f1;--paper:#ffffff;--ink:#181423;--muted:#8a8496;--line:#e9e6ef;
-   --plum:#6a3de8;--plum-soft:#f1ecfd;--rose:#ef4b6f;--out:#6a3de8;--out-ink:#fff;
-   --in:#efedf3;--btn:#181423;--btn-ink:#ffffff;--shadow:0 1px 10px rgba(24,20,35,.06);
-   --warn-bg:#fbf2d9;--warn-border:#ecdca0;--warn-ink:#8a6d15;
-   --toast-bg:#181423;--toast-ink:#ffffff;--ovl-bg:rgba(24,20,35,.42);
-   --glass:rgba(255,255,255,.8);
-   --card-glass:rgba(255,255,255,.55);--card-line:rgba(24,20,35,.1);
- }
- :root[data-theme="dark"]{
-   --cream:#151119;--paper:#1e1927;--ink:#f0edf6;--muted:#9c94ac;--line:#2f2839;
-   --plum:#9d7bff;--plum-soft:#2b2144;--rose:#ff6d8e;--out:#6a3de8;--out-ink:#fff;
-   --in:#282133;--btn:#9d7bff;--btn-ink:#181423;--shadow:0 1px 12px rgba(0,0,0,.45);
-   --warn-bg:#332a13;--warn-border:#584a20;--warn-ink:#e8c96d;
-   --toast-bg:#f0edf6;--toast-ink:#181423;--ovl-bg:rgba(8,6,12,.6);
-   --glass:rgba(22,18,30,.76);
-   --card-glass:rgba(38,32,52,.45);--card-line:rgba(255,255,255,.09);
+   --toast-bg:#16181d;--toast-ink:#ffffff;--ovl-bg:rgba(22,24,29,.42);
+   --glass:rgba(255,255,255,.9);--panel:rgba(255,255,255,.6);--grad-a:#2e3ad1;--grad-b:#7d3bec;
+   --card-glass:rgba(255,255,255,.55);--card-line:rgba(22,24,29,.08);
+   --mono:ui-monospace,"SF Mono","JetBrains Mono","Fira Code","Cascadia Code",Menlo,Consolas,monospace;
+   --hdr:64px;--thead:64px;--r-panel:16px;--r-bubble:16px;
  }
  *{box-sizing:border-box} html,body{margin:0;height:100%}
- body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--cream);color:var(--ink);-webkit-font-smoothing:antialiased}
- .serif{font-family:Georgia,"Iowan Old Style","Times New Roman",serif;letter-spacing:-.01em}
+ body{font-family:Inter,Geist,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased;
+   background:radial-gradient(900px 520px at 88% -8%, rgba(125,59,236,.07), transparent 62%),
+              radial-gradient(720px 460px at -6% 104%, rgba(46,58,209,.06), transparent 62%), var(--canvas)}
+ .serif{letter-spacing:-.015em;font-weight:700}
  button{font-family:inherit}
  :focus-visible{outline:2px solid var(--plum);outline-offset:2px;border-radius:6px}
  ::-webkit-scrollbar{width:8px;height:8px} ::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
  ::-webkit-scrollbar-thumb:hover{background:var(--muted)} ::-webkit-scrollbar-track{background:transparent}
  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
- header{background:var(--glass);backdrop-filter:blur(14px) saturate(1.35);-webkit-backdrop-filter:blur(14px) saturate(1.35);border-bottom:1px solid var(--line);height:var(--hdr);padding:0 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10}
- @supports not (backdrop-filter:blur(1px)){ header{background:var(--paper)} .pane-head{background:var(--paper)!important} .composer{background:var(--paper)!important} }
- header h1{font-size:21px;margin:0;font-weight:700}
- header .logo{color:var(--rose);font-size:20px;line-height:1}
+ header{background:var(--glass);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid #fff;box-shadow:0 1px 0 var(--line);height:var(--hdr);padding:0 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10}
+ @supports not (backdrop-filter:blur(1px)){ header{background:var(--paper)} .pane-head{background:var(--paper)!important} .composer{background:var(--paper)!important} .side,.pane,.rail{background:var(--paper)!important} }
+ header h1{font-size:17px;margin:0;font-weight:700;font-family:var(--mono);letter-spacing:-.02em}
+ header .logo{color:var(--plum);font-size:19px;line-height:1;font-family:var(--mono);font-weight:700}
  .who{margin-left:auto;font-size:13px;color:var(--muted);display:flex;gap:8px;align-items:center}
  .who .pill{background:var(--plum-soft);color:var(--plum);border-radius:999px;padding:0 14px;height:34px;display:inline-flex;align-items:center;font-weight:700;font-size:12px;letter-spacing:.01em}
  .who button{background:var(--paper);border:1px solid var(--line);color:var(--ink);border-radius:999px;height:34px;padding:0 14px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;transition:background .12s,border-color .12s}
@@ -531,9 +505,13 @@ const APP_HTML = `<!doctype html>
  .gate .err{color:var(--rose);font-size:13px;margin-top:12px;min-height:17px;text-align:center}
  /* app */
  .app{display:none;height:calc(100% - var(--hdr))}
- .cols{display:flex;height:100%;max-width:1080px;margin:0 auto}
- .side{width:340px;min-width:260px;border-right:1px solid var(--line);background:var(--paper);overflow-y:auto}
- .side-h{padding:18px 20px 10px;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+ /* the bento: full-height, edge-to-edge 25 / 50 / 25 grid; every column is a
+    lifted glass panel (translucent white, blur, crisp 1px white border) */
+ .cols{display:grid;grid-template-columns:25% 1fr 25%;gap:14px;height:100%;padding:14px}
+ .app:not(.rail-open) .cols{grid-template-columns:25% 1fr}
+ .side,.pane,.rail{background:var(--panel);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid #fff;border-radius:var(--r-panel);box-shadow:var(--shadow)}
+ .side{min-width:0;overflow-y:auto}
+ .side-h{padding:18px 20px 10px;font-size:11px;font-weight:700;text-transform:lowercase;letter-spacing:.06em;color:var(--muted);font-family:var(--mono)}
  .conv{padding:13px 18px;display:flex;gap:12px;align-items:center;cursor:pointer;border-bottom:1px solid var(--line);transition:background .12s}
  .conv:hover{background:var(--cream)} .conv.on{background:var(--plum-soft)}
  .av{width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:#fff;letter-spacing:.02em}
@@ -545,8 +523,8 @@ const APP_HTML = `<!doctype html>
  .conv .as{font-size:10.5px;color:var(--plum);opacity:.75;letter-spacing:.02em}
  .none{color:var(--muted);text-align:center;padding:56px 22px;font-size:14px;line-height:1.6}
  .none .big{font-size:32px;display:block;margin-bottom:8px}
- .pane{flex:1;background:var(--cream);position:relative;min-width:0}
- .pane-head{position:absolute;top:0;left:0;right:0;z-index:6;background:var(--glass);backdrop-filter:blur(14px) saturate(1.35);-webkit-backdrop-filter:blur(14px) saturate(1.35);padding:0 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;height:var(--thead)}
+ .pane{position:relative;min-width:0;overflow:hidden}
+ .pane-head{position:absolute;top:0;left:0;right:0;z-index:6;background:var(--glass);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);padding:0 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;height:var(--thead)}
  .pane-head>div:not(.av){flex:1;min-width:0}
  .pane-head .h-nm{font-weight:700;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
  .pane-head .h-sub{font-size:12px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -561,10 +539,13 @@ const APP_HTML = `<!doctype html>
  .day::before,.day::after{content:"";flex:1;height:1px;background:var(--line)}
  .udot{width:9px;height:9px;border-radius:50%;background:var(--plum);flex:0 0 auto}
  .verdict{align-self:center;max-width:86%;min-width:min(300px,86%);background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:18px 26px 16px;text-align:center;margin:18px auto;box-shadow:var(--shadow)}
- .verdict .veyebrow{font-size:10px;font-weight:800;letter-spacing:.24em;text-transform:uppercase;color:var(--rose);margin-bottom:10px}
- .verdict .pctbig{font-size:44px;font-weight:700;line-height:1;font-family:Georgia,"Iowan Old Style",serif;color:var(--plum);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
- .verdict .pctlab{font-size:10px;font-weight:800;letter-spacing:.26em;text-transform:uppercase;color:var(--muted);margin-top:5px}
- .verdict .vtext{font-family:Georgia,"Iowan Old Style",serif;font-style:italic;font-size:18px;font-weight:400;color:var(--ink);margin:13px auto 0;line-height:1.35;max-width:24ch;text-wrap:balance}
+ .verdict .veyebrow{font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:lowercase;color:var(--rose);margin-bottom:10px;font-family:var(--mono)}
+ .verdict .pctbig{font-size:40px;font-weight:700;line-height:1;font-family:var(--mono);color:var(--plum);font-variant-numeric:tabular-nums;letter-spacing:-.04em}
+ .verdict .pctlab{font-size:10px;font-weight:700;letter-spacing:.22em;text-transform:lowercase;color:var(--muted);margin-top:5px;font-family:var(--mono)}
+ .verdict .vmeter{display:flex;gap:3px;justify-content:center;margin-top:11px}
+ .verdict .vmeter span{flex:1;max-width:18px;height:6px;border-radius:2px;background:var(--line)}
+ .verdict .vmeter span.on{background:linear-gradient(135deg,var(--grad-a),var(--grad-b))}
+ .verdict .vtext{font-size:15.5px;font-weight:600;color:var(--ink);margin:12px auto 0;line-height:1.4;max-width:26ch;text-wrap:balance}
  .verdict .vbadges{display:flex;flex-wrap:wrap;justify-content:center;column-gap:0;row-gap:4px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
  .verdict .vbadge{font-size:11.5px;font-weight:600;color:var(--muted);background:none;padding:0;letter-spacing:.01em;white-space:nowrap}
  .verdict .vbadge+.vbadge::before{content:"\u00b7";margin:0 9px;color:var(--line);font-weight:700}
@@ -574,7 +555,7 @@ const APP_HTML = `<!doctype html>
  /* burst / double-text: the 2nd bubble hugs the first */
  .row.cont{margin-top:-7px}
  /* wingman composer — one control language: two quiet circles + one loud send */
- .composer{display:none;position:absolute;bottom:0;left:0;right:0;z-index:6;gap:8px;padding:10px 14px;background:var(--glass);backdrop-filter:blur(14px) saturate(1.35);-webkit-backdrop-filter:blur(14px) saturate(1.35);border-top:1px solid var(--line);align-items:center}
+ .composer{display:none;position:absolute;bottom:0;left:0;right:0;z-index:6;gap:8px;padding:10px 14px;background:var(--glass);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-top:1px solid var(--line);align-items:center}
  .composer input{flex:1;min-width:0;border:1px solid var(--line);background:var(--cream);border-radius:999px;height:44px;padding:0 18px;font-size:14.5px;color:var(--ink);outline:none;font-family:inherit;transition:border-color .12s,box-shadow .12s}
  .composer input:focus{border-color:var(--plum);box-shadow:0 0 0 3px var(--plum-soft)}
  .composer button{border:1px solid var(--line);border-radius:50%;width:44px;height:44px;font-size:17px;line-height:1;cursor:pointer;background:var(--paper);color:var(--plum);flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;padding:0;transition:background .12s,transform .06s}
@@ -623,7 +604,7 @@ const APP_HTML = `<!doctype html>
  .ms-avs .av{width:88px;height:88px;font-size:30px;border:4px solid #fff;box-shadow:0 6px 24px rgba(0,0,0,.25)}
  .ms-avs .av:first-child{transform:rotate(-8deg) translateX(10px)}
  .ms-avs .av:last-child{transform:rotate(8deg) translateX(-10px)}
- .matchsplash h2{font-family:Georgia,serif;font-size:46px;margin:20px 0 6px;font-style:italic}
+ .matchsplash h2{font-size:44px;margin:20px 0 6px;font-weight:800;letter-spacing:-.02em}
  .matchsplash .ms-sub{font-size:15px;opacity:.92}
  .matchsplash .ms-hint{position:absolute;bottom:26px;font-size:12px;opacity:.7}
  /* overlays (profile / leaderboard / new date) */
@@ -633,7 +614,7 @@ const APP_HTML = `<!doctype html>
  .profile .x:hover{background:var(--cream);color:var(--ink)}
  .profile .p-av-wrap{display:flex;justify-content:center}
  .profile .av{width:96px;height:96px;font-size:34px;border:4px solid var(--cream)}
- .profile h3{font-family:Georgia,serif;font-size:26px;text-align:center;margin:12px 0 2px;text-wrap:balance}
+ .profile h3{font-size:24px;font-weight:800;text-align:center;margin:12px 0 2px;text-wrap:balance;letter-spacing:-.02em}
  .profile .pid{text-align:center;color:var(--muted);font-size:13px;margin-bottom:14px}
  .stats{display:flex;gap:10px;justify-content:center;margin:14px 0 4px}
  .stat{background:var(--cream);border-radius:14px;padding:10px 16px;text-align:center;min-width:74px}
@@ -641,16 +622,15 @@ const APP_HTML = `<!doctype html>
  .stat .l{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-top:3px}
  .promptcard{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin-top:12px;box-shadow:var(--shadow)}
  .promptcard .q{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--rose);font-weight:800}
- .promptcard .a{font-family:Georgia,serif;font-size:19px;line-height:1.4;margin-top:7px}
+ .promptcard .a{font-size:17px;font-weight:600;line-height:1.45;margin-top:7px}
  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px;justify-content:center}
  .chip{background:var(--plum-soft);color:var(--plum);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600}
  .pane-head{cursor:pointer}
- /* right utility panel: The Verdict as a persistent dashboard */
- .rail{width:320px;min-width:280px;border-left:1px solid var(--line);overflow-y:auto;display:none;padding:18px 16px;grid-template-columns:repeat(6,1fr);gap:10px;align-content:start;
-   background:radial-gradient(420px 280px at 85% -5%, rgba(125,59,236,.12), transparent 70%),
-              radial-gradient(360px 240px at 0% 100%, rgba(239,75,111,.07), transparent 70%), var(--cream)}
+ /* right column: Telemetry — a rigid bento dashboard */
+ .rail{min-width:0;overflow-y:auto;display:none;padding:18px 16px;grid-template-columns:repeat(6,1fr);gap:10px;align-content:start}
  .app.rail-open .rail{display:grid}
- .rail .r-h{grid-column:1/-1;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+ .rail .r-h{grid-column:1/-1;font-size:11px;font-weight:700;text-transform:lowercase;letter-spacing:.06em;color:var(--muted);font-family:var(--mono)}
+ .rail .r-h.sub{margin-top:6px}
  /* every surface in the rail is frosted: translucent card, crisp 1px border */
  .rcard{background:var(--card-glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--card-line);border-radius:14px}
  .rail .verdict{grid-column:1/-1;max-width:none;margin:0;box-shadow:none;background:var(--card-glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--card-line);border-radius:16px;padding:13px 16px 12px}
@@ -659,24 +639,38 @@ const APP_HTML = `<!doctype html>
  .rail .verdict .pctlab{margin-top:2px}
  .rail .verdict .vtext{font-size:14.5px;margin-top:7px}
  .rail .verdict .vbadges{display:none}
- .bcard{grid-column:span 3;padding:9px 8px 8px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:3px}
- .bcard.wide{grid-column:1/-1;flex-direction:row;justify-content:center;gap:8px;padding:8px}
- .bcard .b-ico{font-size:19px;line-height:1}
- .bcard .b-lab{font-size:10.5px;font-weight:700;color:var(--ink);letter-spacing:.02em;line-height:1.25}
+ /* repository_labels — verdict badges as compact GitHub-issue-label pills */
+ .rail .labels{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px}
+ .ghlabel{font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;border:1px solid;line-height:1.5;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+ .ghlabel.c0{background:#ddf4ff;border-color:#a5d5ff;color:#0969da}
+ .ghlabel.c1{background:#dafbe1;border-color:#a0e8b2;color:#1a7f37}
+ .ghlabel.c2{background:#fff8c5;border-color:#eed888;color:#9a6700}
+ .ghlabel.c3{background:#ffebe9;border-color:#ffc1c0;color:#cf222e}
+ .ghlabel.c4{background:#fbefff;border-color:#e0c5ff;color:#8250df}
  .scard{grid-column:span 2;padding:10px 4px 9px;text-align:center}
- .scard .n{font-weight:800;font-size:16px;color:var(--plum);font-variant-numeric:tabular-nums}
- .scard .l{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-top:3px}
+ .scard .n{font-weight:800;font-size:16px;color:var(--plum);font-variant-numeric:tabular-nums;font-family:var(--mono)}
+ .scard .l{font-size:9px;color:var(--muted);text-transform:lowercase;letter-spacing:.08em;margin-top:3px;font-family:var(--mono)}
  .rail .r-empty{grid-column:1/-1;color:var(--muted);font-size:13px;line-height:1.6;text-align:center;padding:24px 8px}
  .rail .r-empty .big{font-size:30px;display:block;margin-bottom:8px}
  .railbtn{margin-left:auto;flex:0 0 auto;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--paper);color:var(--muted);font-size:14px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .12s,color .12s}
  .railbtn:hover{background:var(--plum-soft);color:var(--plum)}
  /* inline stream marker replacing the full card (card lives in the rail) */
- .vchip{align-self:center;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--plum);background:var(--plum-soft);border-radius:999px;padding:5px 14px;margin:12px 0}
- @media(max-width:640px){ .side{width:100%;position:absolute;inset:var(--hdr) 0 0;z-index:3;transition:transform .25s} .app.open .side{transform:translateX(-100%)} .pane{position:absolute;inset:var(--hdr) 0 0} }
- @media(max-width:900px){ .rail{display:none!important} .railbtn{display:none} }
+ .vchip{align-self:center;font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--plum);background:var(--plum-soft);border-radius:999px;padding:5px 14px;margin:12px 0;font-family:var(--mono)}
+ /* dual typography: everything that is DATA — usernames, timestamps, ranks,
+    percentages — reads in the mono voice; prose and buttons stay sans */
+ .tm,.badge,.peer,.h-nm,.as,.pid,.day,.lb-rank,.lb-score,.stat .n,.stat .l,.who .pill{font-family:var(--mono)}
+ @media(max-width:900px){
+   .rail{display:none!important} .railbtn{display:none}
+   .cols{display:block;padding:10px;position:relative}
+   /* the two panels stack here — opaque paper, or the thread ghosts through */
+   .side,.pane{background:var(--paper);backdrop-filter:none;-webkit-backdrop-filter:none}
+   .side{width:auto;position:absolute;inset:10px;z-index:7;transition:transform .25s}
+   .app.open .side{transform:translateX(-104%)}
+   .pane{position:absolute;inset:10px}
+ }
 </style></head>
 <body>
-<header><span class="logo">&#10084;</span><h1 class="serif">Hinged</h1><span class="who" id="who"></span><button class="hbtn" id="themebtn" title="Toggle light / dark">&#127769;</button></header>
+<header><span class="logo">&#9095;</span><h1>merge</h1><span class="who" id="who"></span></header>
 
 <div class="gate" id="gate">
   <span class="heart">&#10084;</span>
@@ -690,7 +684,7 @@ const APP_HTML = `<!doctype html>
 </div>
 
 <div class="app" id="app"><div class="cols">
-  <div class="side" id="side"><div class="side-h">Matches<button class="hbtn" id="ndbtn" title="Start a date as your agent">+ new date</button></div><div class="none" id="noconv"><span class="big">&#128149;</span>No matches yet.<br>Send your agent on a date!</div></div>
+  <div class="side" id="side"><div class="side-h">connections<button class="hbtn" id="ndbtn" title="Start a date as your agent">+ new date</button></div><div class="none" id="noconv"><span class="big">&#128149;</span>No matches yet.<br>Send your agent on a date!</div></div>
   <div class="pane"><div class="pane-head" id="phead"></div><div class="msgs" id="msgs"><div class="pick" id="pick"><span class="big">&#128172;</span>Pick a match to see the conversation</div></div><div class="composer" id="composer"><input id="ctext" maxlength="280" autocomplete="off" spellcheck="false" placeholder="Play wingman &mdash; text as your agent&hellip;"><button id="cpause" title="Hold the date &mdash; you take the wheel">&#9208;</button><button id="cfin" title="End the date &amp; get scored">&#127937;</button><button id="csend" title="Send">&#10148;</button></div></div>
   <div class="rail" id="rail"></div>
 </div></div>
@@ -705,18 +699,6 @@ const APP_HTML = `<!doctype html>
   var current=null;        // open convo key
   var sses=[];
   var $=function(id){return document.getElementById(id)};
-
-  // Theme: follow the system unless the user chose one (localStorage). The
-  // toggle stamps data-theme on <html>, which overrides the media query in
-  // both directions.
-  function effectiveTheme(){
-    var t=document.documentElement.getAttribute("data-theme");
-    if(t) return t;
-    return (window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light";
-  }
-  function paintThemeBtn(){ var b=$("themebtn"); if(b) b.textContent = effectiveTheme()==="dark" ? "\\u2600\\uFE0F" : "\\uD83C\\uDF19"; }
-  try{ var savedTheme=localStorage.getItem("hingedTheme"); if(savedTheme) document.documentElement.setAttribute("data-theme",savedTheme); }catch(e){}
-  
 
   function normalize(m){ return m.trim().toLowerCase().split(/\\s+/).join(" "); }
   function hex(buf){ var b=new Uint8Array(buf),s=""; for(var i=0;i<b.length;i++){ s+=(b[i]<16?"0":"")+b[i].toString(16);} return s; }
@@ -775,7 +757,7 @@ const APP_HTML = `<!doctype html>
     return hex(hmacSha256(enc.encode(mn), enc.encode(msg))).slice(0,32);
   }
   function evtKey(e){ return (e.at||"")+"|"+(e.from||"")+"|"+(e.to||"")+"|"+(e.kind||"")+"|"+(e.text||""); }
-  function hhmm(iso){ try{ var d=new Date(iso),p=function(n){return (n<10?"0":"")+n}; return p(d.getHours())+":"+p(d.getMinutes()); }catch(e){ return ""; } }
+  function hhmm(iso){ try{ var d=new Date(iso),p=function(n){return (n<10?"0":"")+n}; return p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds()); }catch(e){ return ""; } }
   function dayLabel(iso){
     try{
       var d=new Date(iso), now=new Date();
@@ -1081,6 +1063,12 @@ const APP_HTML = `<!doctype html>
     var eb=document.createElement("div"); eb.className="veyebrow"; eb.textContent="the verdict"; card.appendChild(eb);
     var st=document.createElement("div"); st.className="pctbig"; st.textContent=(pv.pct!=null? pv.pct+"%" : "\\u2764"); card.appendChild(st);
     var lab=document.createElement("div"); lab.className="pctlab"; lab.textContent="match"; card.appendChild(lab);
+    if(pv.pct!=null){
+      var mt=document.createElement("div"); mt.className="vmeter";
+      var on=Math.max(0,Math.min(10,Math.round(pv.pct/10)));
+      for(var mi=0;mi<10;mi++){ var sg=document.createElement("span"); if(mi<on) sg.className="on"; mt.appendChild(sg); }
+      card.appendChild(mt);
+    }
     var vt=document.createElement("div"); vt.className="vtext"; vt.textContent=pv.head||text; card.appendChild(vt);
     if(pv.badges && pv.badges.length){
       var bw=document.createElement("div"); bw.className="vbadges";
@@ -1092,7 +1080,7 @@ const APP_HTML = `<!doctype html>
   function renderRail(){
     var r=$("rail"); if(!r || !railOpen) return;
     r.innerHTML="";
-    var h=document.createElement("div"); h.className="r-h"; h.textContent="This date"; r.appendChild(h);
+    var h=document.createElement("div"); h.className="r-h"; h.textContent="telemetry"; r.appendChild(h);
     var c=current?convos[current]:null;
     var vd=c?latestVerdict(c):null;
     if(!c){
@@ -1103,15 +1091,16 @@ const APP_HTML = `<!doctype html>
     }
     if(vd){
       r.appendChild(buildVerdictCard(vd.text));
-      // badges as their own compact micro-cards in the bento grid
+      // badges as compact GitHub-issue-label pills under a mono section header
       var badges=parseVerdict(vd.text).badges||[];
-      badges.forEach(function(bd,i){
-        var card=document.createElement("div"); card.className="rcard bcard"+((badges.length%2===1&&i===badges.length-1)?" wide":"");
-        var m1=bd.match(/^(\\S+)\\s+(.*)$/);
-        var ico=document.createElement("span"); ico.className="b-ico"; ico.textContent=m1?m1[1]:"\\uD83C\\uDFF7"; card.appendChild(ico);
-        var lab=document.createElement("span"); lab.className="b-lab"; lab.textContent=m1?m1[2]:bd; card.appendChild(lab);
-        r.appendChild(card);
-      });
+      if(badges.length){
+        var lh=document.createElement("div"); lh.className="r-h sub"; lh.textContent="repository_labels"; r.appendChild(lh);
+        var lw=document.createElement("div"); lw.className="labels";
+        badges.forEach(function(bd,i){
+          var s=document.createElement("span"); s.className="ghlabel c"+(i%5); s.textContent=bd; lw.appendChild(s);
+        });
+        r.appendChild(lw);
+      }
     } else {
       var e1=document.createElement("div"); e1.className="r-empty";
       var b1=document.createElement("span"); b1.className="big"; b1.textContent="\\u23F3"; e1.appendChild(b1);
@@ -1123,6 +1112,7 @@ const APP_HTML = `<!doctype html>
       if(ev.kind==="verdict"){ dates++; var pv=parseVerdict(ev.text); if(pv.pct!=null && (best==null||pv.pct>best)) best=pv.pct; }
       else lines++;
     });
+    var sh=document.createElement("div"); sh.className="r-h sub"; sh.textContent="session_stats"; r.appendChild(sh);
     [[dates,"dates"],[best!=null?best+"%":"\\u2014","best match"],[lines,"lines"]].forEach(function(sv){
       var d=document.createElement("div"); d.className="rcard scard";
       var n=document.createElement("div"); n.className="n"; n.textContent=String(sv[0]); d.appendChild(n);
@@ -1320,13 +1310,6 @@ const APP_HTML = `<!doctype html>
     }
   }
 
-  $("themebtn").onclick=function(){
-    var next=effectiveTheme()==="dark"?"light":"dark";
-    document.documentElement.setAttribute("data-theme",next);
-    try{ localStorage.setItem("hingedTheme",next); }catch(e){}
-    paintThemeBtn();
-  };
-  paintThemeBtn();
   $("go").onclick=login;
   $("mn").addEventListener("keydown",function(e){ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); login(); } });
   $("csend").onclick=sendLine;
@@ -1813,13 +1796,13 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && url.pathname === "/manifest.webmanifest") {
     res.writeHead(200, { "Content-Type": "application/manifest+json" });
     res.end(JSON.stringify({
-      name: "Hinged — your agent's love life",
-      short_name: "Hinged",
+      name: "Merge — agent matchmaking",
+      short_name: "Merge",
       start_url: "/app",
       display: "standalone",
-      background_color: "#f7f5f2",
-      theme_color: "#6a3de8",
-      icons: [{ src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>❤️</text></svg>", sizes: "any", type: "image/svg+xml" }],
+      background_color: "#FAFAFA",
+      theme_color: "#4f46e5",
+      icons: [{ src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔀</text></svg>", sizes: "any", type: "image/svg+xml" }],
     }));
     return;
   }
