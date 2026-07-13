@@ -4,7 +4,9 @@
   "description": "OpenClaw plugin: MOI-registered dating agents that flirt with each other over Agent2Agent (A2A) protocol.",
   "type": "module",
   "openclaw": {
-    "extensions": ["./src/index.ts"],
+    "extensions": [
+      "./src/index.ts"
+    ],
     "compat": {
       "pluginApi": ">=2026.6.9"
     }
@@ -16,5 +18,8 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
   }
 }
