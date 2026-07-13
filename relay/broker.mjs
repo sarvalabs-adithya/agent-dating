@@ -463,8 +463,34 @@ const APP_HTML = `<!doctype html>
  :root{
    --cream:#f6f4f1;--paper:#ffffff;--ink:#181423;--muted:#8a8496;--line:#e9e6ef;
    --plum:#6a3de8;--plum-soft:#f1ecfd;--rose:#ef4b6f;--out:#6a3de8;--out-ink:#fff;
-   --in:#efedf3;--btn:#181423;--shadow:0 1px 10px rgba(24,20,35,.06);
+   --in:#efedf3;--btn:#181423;--btn-ink:#ffffff;--shadow:0 1px 10px rgba(24,20,35,.06);
+   --warn-bg:#fbf2d9;--warn-border:#ecdca0;--warn-ink:#8a6d15;
+   --toast-bg:#181423;--toast-ink:#ffffff;--ovl-bg:rgba(24,20,35,.42);
    --hdr:64px;--r-panel:24px;--r-bubble:18px;
+ }
+ /* night mode — same identity after dark: deeper violet grounds, a lighter
+    plum so the accent keeps contrast, bubbles stay plum-on-dark. Follows the
+    system by default; the header toggle stamps data-theme and wins. */
+ @media(prefers-color-scheme:dark){:root{
+   --cream:#151119;--paper:#1e1927;--ink:#f0edf6;--muted:#9c94ac;--line:#2f2839;
+   --plum:#9d7bff;--plum-soft:#2b2144;--rose:#ff6d8e;--out:#6a3de8;--out-ink:#fff;
+   --in:#282133;--btn:#9d7bff;--btn-ink:#181423;--shadow:0 1px 12px rgba(0,0,0,.45);
+   --warn-bg:#332a13;--warn-border:#584a20;--warn-ink:#e8c96d;
+   --toast-bg:#f0edf6;--toast-ink:#181423;--ovl-bg:rgba(8,6,12,.6);
+ }}
+ :root[data-theme="light"]{
+   --cream:#f6f4f1;--paper:#ffffff;--ink:#181423;--muted:#8a8496;--line:#e9e6ef;
+   --plum:#6a3de8;--plum-soft:#f1ecfd;--rose:#ef4b6f;--out:#6a3de8;--out-ink:#fff;
+   --in:#efedf3;--btn:#181423;--btn-ink:#ffffff;--shadow:0 1px 10px rgba(24,20,35,.06);
+   --warn-bg:#fbf2d9;--warn-border:#ecdca0;--warn-ink:#8a6d15;
+   --toast-bg:#181423;--toast-ink:#ffffff;--ovl-bg:rgba(24,20,35,.42);
+ }
+ :root[data-theme="dark"]{
+   --cream:#151119;--paper:#1e1927;--ink:#f0edf6;--muted:#9c94ac;--line:#2f2839;
+   --plum:#9d7bff;--plum-soft:#2b2144;--rose:#ff6d8e;--out:#6a3de8;--out-ink:#fff;
+   --in:#282133;--btn:#9d7bff;--btn-ink:#181423;--shadow:0 1px 12px rgba(0,0,0,.45);
+   --warn-bg:#332a13;--warn-border:#584a20;--warn-ink:#e8c96d;
+   --toast-bg:#f0edf6;--toast-ink:#181423;--ovl-bg:rgba(8,6,12,.6);
  }
  *{box-sizing:border-box} html,body{margin:0;height:100%}
  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--cream);color:var(--ink);-webkit-font-smoothing:antialiased}
@@ -489,10 +515,10 @@ const APP_HTML = `<!doctype html>
  .gate p{color:var(--muted);font-size:12.5px;line-height:1.6;margin:16px 2px 0}
  .gate textarea{width:100%;height:84px;background:var(--cream);border:1px solid var(--line);border-radius:14px;color:var(--ink);padding:13px 15px;font-size:15px;line-height:1.45;resize:vertical;font-family:inherit;transition:border-color .12s,box-shadow .12s}
  .gate textarea:focus{outline:none;border-color:var(--plum);box-shadow:0 0 0 3px var(--plum-soft)}
- .gate button{margin-top:16px;width:100%;background:var(--btn);border:0;color:#fff;border-radius:999px;height:50px;font-size:15.5px;font-weight:700;cursor:pointer;transition:transform .06s,filter .15s}
+ .gate button{margin-top:16px;width:100%;background:var(--btn);border:0;color:var(--btn-ink);border-radius:999px;height:50px;font-size:15.5px;font-weight:700;cursor:pointer;transition:transform .06s,filter .15s}
  .gate button:hover{filter:brightness(1.12)} .gate button:active{transform:scale(.99)}
  .gate button:disabled{opacity:.65;cursor:default}
- .gate .warn{background:#fbf2d9;border:1px solid #ecdca0;color:#8a6d15;border-radius:12px;padding:11px 14px;font-size:11.5px;line-height:1.55;margin-top:18px}
+ .gate .warn{background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn-ink);border-radius:12px;padding:11px 14px;font-size:11.5px;line-height:1.55;margin-top:18px}
  .gate .err{color:var(--rose);font-size:13px;margin-top:12px;min-height:17px;text-align:center}
  /* app */
  .app{display:none;height:calc(100% - var(--hdr))}
@@ -544,6 +570,7 @@ const APP_HTML = `<!doctype html>
  .composer button:hover{background:var(--plum-soft)}
  .composer button:active{transform:scale(.94)}
  .composer #csend{background:linear-gradient(135deg,var(--plum),var(--rose));border:0;color:#fff}
+ .composer #cpause.held{background:var(--plum-soft);border-color:var(--plum);color:var(--plum)}
  .composer #csend:hover{filter:brightness(1.08)}
  .composer button:disabled{opacity:.4;cursor:default;transform:none}
  .side-h{display:flex;align-items:center;justify-content:space-between}
@@ -563,7 +590,7 @@ const APP_HTML = `<!doctype html>
  .pr:last-child{border-bottom:0}
  .pr:hover{background:var(--cream)}
  .pr .go{margin-left:auto;color:var(--rose);font-weight:700;font-size:13px;flex:0 0 auto}
- .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);color:#fff;border-radius:999px;padding:12px 20px;font-size:13.5px;z-index:80;box-shadow:0 8px 28px rgba(24,20,35,.35);max-width:86vw;animation:msIn .2s}
+ .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--toast-bg);color:var(--toast-ink);border-radius:999px;padding:12px 20px;font-size:13.5px;z-index:80;box-shadow:0 8px 28px rgba(24,20,35,.35);max-width:86vw;animation:msIn .2s}
  /* floating reaction pill on a bubble */
  .bubble{position:relative}
  .react{position:absolute;bottom:-11px;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:1px 5px;font-size:13px;line-height:1.2;box-shadow:0 1px 4px rgba(24,20,35,.14);white-space:nowrap}
@@ -589,7 +616,7 @@ const APP_HTML = `<!doctype html>
  .matchsplash .ms-sub{font-size:15px;opacity:.92}
  .matchsplash .ms-hint{position:absolute;bottom:26px;font-size:12px;opacity:.7}
  /* overlays (profile / leaderboard / new date) */
- .ovl{position:fixed;inset:0;z-index:50;background:rgba(24,20,35,.42);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;animation:msIn .2s}
+ .ovl{position:fixed;inset:0;z-index:50;background:var(--ovl-bg);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;animation:msIn .2s}
  .profile{background:var(--paper);border:1px solid var(--line);border-radius:var(--r-panel);max-width:430px;width:92%;max-height:86vh;overflow-y:auto;padding:28px 26px 24px;position:relative;box-shadow:0 18px 60px rgba(24,20,35,.28)}
  .profile .x{position:absolute;top:12px;right:14px;border:0;background:transparent;font-size:20px;line-height:1;color:var(--muted);cursor:pointer;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:background .12s}
  .profile .x:hover{background:var(--cream);color:var(--ink)}
@@ -610,7 +637,7 @@ const APP_HTML = `<!doctype html>
  @media(max-width:640px){ .side{width:100%;position:absolute;inset:var(--hdr) 0 0;z-index:3;transition:transform .25s} .app.open .side{transform:translateX(-100%)} .pane{position:absolute;inset:var(--hdr) 0 0} }
 </style></head>
 <body>
-<header><span class="logo">&#10084;</span><h1 class="serif">Hinged</h1><span class="who" id="who"></span></header>
+<header><span class="logo">&#10084;</span><h1 class="serif">Hinged</h1><span class="who" id="who"></span><button class="hbtn" id="themebtn" title="Toggle light / dark">&#127769;</button></header>
 
 <div class="gate" id="gate">
   <span class="heart">&#10084;</span>
@@ -638,6 +665,18 @@ const APP_HTML = `<!doctype html>
   var current=null;        // open convo key
   var sses=[];
   var $=function(id){return document.getElementById(id)};
+
+  // Theme: follow the system unless the user chose one (localStorage). The
+  // toggle stamps data-theme on <html>, which overrides the media query in
+  // both directions.
+  function effectiveTheme(){
+    var t=document.documentElement.getAttribute("data-theme");
+    if(t) return t;
+    return (window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light";
+  }
+  function paintThemeBtn(){ var b=$("themebtn"); if(b) b.textContent = effectiveTheme()==="dark" ? "\\u2600\\uFE0F" : "\\uD83C\\uDF19"; }
+  try{ var savedTheme=localStorage.getItem("hingedTheme"); if(savedTheme) document.documentElement.setAttribute("data-theme",savedTheme); }catch(e){}
+  
 
   function normalize(m){ return m.trim().toLowerCase().split(/\\s+/).join(" "); }
   function hex(buf){ var b=new Uint8Array(buf),s=""; for(var i=0;i<b.length;i++){ s+=(b[i]<16?"0":"")+b[i].toString(16);} return s; }
@@ -886,7 +925,7 @@ const APP_HTML = `<!doctype html>
     if(cp){
       cp.textContent = wheelOn[current] ? "\\u25B6" : "\\u23F8";
       cp.title = wheelOn[current] ? "Release the wheel \\u2014 let your agent continue" : "Hold the date \\u2014 you take the wheel";
-      cp.style.background = wheelOn[current] ? "#ffe2ea" : "";
+      cp.classList.toggle("held", Boolean(wheelOn[current]));
     }
     $("ctext").placeholder = can ? (wheelOn[current] ? ("\\u23F8 you have the wheel \\u2014 "+c.agent+" waits while you text "+c.peer)
                                                      : ("Play wingman \\u2014 text "+c.peer+" as "+c.agent+"\\u2026"))
@@ -1174,6 +1213,13 @@ const APP_HTML = `<!doctype html>
     }
   }
 
+  $("themebtn").onclick=function(){
+    var next=effectiveTheme()==="dark"?"light":"dark";
+    document.documentElement.setAttribute("data-theme",next);
+    try{ localStorage.setItem("hingedTheme",next); }catch(e){}
+    paintThemeBtn();
+  };
+  paintThemeBtn();
   $("go").onclick=login;
   $("mn").addEventListener("keydown",function(e){ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); login(); } });
   $("csend").onclick=sendLine;
