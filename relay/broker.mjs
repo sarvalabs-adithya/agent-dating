@@ -466,6 +466,7 @@ const APP_HTML = `<!doctype html>
    --in:#efedf3;--btn:#181423;--btn-ink:#ffffff;--shadow:0 1px 10px rgba(24,20,35,.06);
    --warn-bg:#fbf2d9;--warn-border:#ecdca0;--warn-ink:#8a6d15;
    --toast-bg:#181423;--toast-ink:#ffffff;--ovl-bg:rgba(24,20,35,.42);
+   --glass:rgba(255,255,255,.72);--grad-a:#4646e0;--grad-b:#8b3df0;
    --hdr:64px;--r-panel:24px;--r-bubble:18px;
  }
  /* night mode — same identity after dark: deeper violet grounds, a lighter
@@ -477,6 +478,7 @@ const APP_HTML = `<!doctype html>
    --in:#282133;--btn:#9d7bff;--btn-ink:#181423;--shadow:0 1px 12px rgba(0,0,0,.45);
    --warn-bg:#332a13;--warn-border:#584a20;--warn-ink:#e8c96d;
    --toast-bg:#f0edf6;--toast-ink:#181423;--ovl-bg:rgba(8,6,12,.6);
+   --glass:rgba(24,20,33,.66);
  }}
  :root[data-theme="light"]{
    --cream:#f6f4f1;--paper:#ffffff;--ink:#181423;--muted:#8a8496;--line:#e9e6ef;
@@ -484,6 +486,7 @@ const APP_HTML = `<!doctype html>
    --in:#efedf3;--btn:#181423;--btn-ink:#ffffff;--shadow:0 1px 10px rgba(24,20,35,.06);
    --warn-bg:#fbf2d9;--warn-border:#ecdca0;--warn-ink:#8a6d15;
    --toast-bg:#181423;--toast-ink:#ffffff;--ovl-bg:rgba(24,20,35,.42);
+   --glass:rgba(255,255,255,.72);
  }
  :root[data-theme="dark"]{
    --cream:#151119;--paper:#1e1927;--ink:#f0edf6;--muted:#9c94ac;--line:#2f2839;
@@ -491,6 +494,7 @@ const APP_HTML = `<!doctype html>
    --in:#282133;--btn:#9d7bff;--btn-ink:#181423;--shadow:0 1px 12px rgba(0,0,0,.45);
    --warn-bg:#332a13;--warn-border:#584a20;--warn-ink:#e8c96d;
    --toast-bg:#f0edf6;--toast-ink:#181423;--ovl-bg:rgba(8,6,12,.6);
+   --glass:rgba(24,20,33,.66);
  }
  *{box-sizing:border-box} html,body{margin:0;height:100%}
  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--cream);color:var(--ink);-webkit-font-smoothing:antialiased}
@@ -500,7 +504,8 @@ const APP_HTML = `<!doctype html>
  ::-webkit-scrollbar{width:8px;height:8px} ::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
  ::-webkit-scrollbar-thumb:hover{background:var(--muted)} ::-webkit-scrollbar-track{background:transparent}
  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
- header{background:var(--paper);border-bottom:1px solid var(--line);height:var(--hdr);padding:0 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+ header{background:var(--glass);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);border-bottom:1px solid var(--line);height:var(--hdr);padding:0 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+ @supports not (backdrop-filter:blur(1px)){ header{background:var(--paper)} .pane-head{background:var(--paper)!important} .composer{background:var(--paper)!important} }
  header h1{font-size:21px;margin:0;font-weight:700}
  header .logo{color:var(--rose);font-size:20px;line-height:1}
  .who{margin-left:auto;font-size:13px;color:var(--muted);display:flex;gap:8px;align-items:center}
@@ -515,7 +520,7 @@ const APP_HTML = `<!doctype html>
  .gate p{color:var(--muted);font-size:12.5px;line-height:1.6;margin:16px 2px 0}
  .gate textarea{width:100%;height:84px;background:var(--cream);border:1px solid var(--line);border-radius:14px;color:var(--ink);padding:13px 15px;font-size:15px;line-height:1.45;resize:vertical;font-family:inherit;transition:border-color .12s,box-shadow .12s}
  .gate textarea:focus{outline:none;border-color:var(--plum);box-shadow:0 0 0 3px var(--plum-soft)}
- .gate button{margin-top:16px;width:100%;background:var(--btn);border:0;color:var(--btn-ink);border-radius:999px;height:50px;font-size:15.5px;font-weight:700;cursor:pointer;transition:transform .06s,filter .15s}
+ .gate button{margin-top:16px;width:100%;background:linear-gradient(135deg,var(--grad-a),var(--grad-b));border:0;color:#fff;border-radius:999px;height:50px;font-size:15.5px;font-weight:700;cursor:pointer;transition:transform .06s,filter .15s}
  .gate button:hover{filter:brightness(1.12)} .gate button:active{transform:scale(.99)}
  .gate button:disabled{opacity:.65;cursor:default}
  .gate .warn{background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn-ink);border-radius:12px;padding:11px 14px;font-size:11.5px;line-height:1.55;margin-top:18px}
@@ -536,14 +541,14 @@ const APP_HTML = `<!doctype html>
  .conv .as{font-size:10.5px;color:var(--plum);opacity:.75;letter-spacing:.02em}
  .none{color:var(--muted);text-align:center;padding:56px 22px;font-size:14px;line-height:1.6}
  .none .big{font-size:32px;display:block;margin-bottom:8px}
- .pane{flex:1;background:var(--cream);display:flex;flex-direction:column;min-width:0}
- .pane-head{background:var(--paper);padding:11px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;min-height:64px}
+ .pane{flex:1;background:var(--cream);position:relative;min-width:0}
+ .pane-head{position:absolute;top:0;left:0;right:0;z-index:3;background:var(--glass);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);padding:11px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;min-height:64px}
  .pane-head .h-nm{font-weight:700;font-size:16px} .pane-head .h-sub{font-size:12px;color:var(--muted);margin-top:1px}
- .msgs{flex:1;overflow-y:auto;padding:22px 20px 16px;display:flex;flex-direction:column;gap:10px}
+ .msgs{position:absolute;inset:0;overflow-y:auto;padding:calc(var(--hdr) + 16px) 20px 84px;display:flex;flex-direction:column;gap:10px}
  .row{display:flex;align-items:flex-end;gap:8px} .row.out{justify-content:flex-end}
  .bubble{max-width:min(72%,460px);padding:10px 15px;border-radius:var(--r-bubble);font-size:15px;line-height:1.45;word-wrap:break-word;overflow-wrap:anywhere}
  .row.in .bubble{background:var(--in);border-bottom-left-radius:6px}
- .row.out .bubble{background:var(--out);color:var(--out-ink);border-bottom-right-radius:6px}
+ .row.out .bubble{background:linear-gradient(135deg,var(--grad-a),var(--grad-b));color:var(--out-ink);border-bottom-right-radius:6px}
  .tm{display:block;font-size:10px;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums}
  .row.out .tm{color:rgba(255,255,255,.7);text-align:right}
  .day{align-self:stretch;display:flex;align-items:center;gap:12px;font-size:10.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:14px 0 4px}
@@ -563,13 +568,13 @@ const APP_HTML = `<!doctype html>
  /* burst / double-text: the 2nd bubble hugs the first */
  .row.cont{margin-top:-7px}
  /* wingman composer — one control language: two quiet circles + one loud send */
- .composer{display:none;gap:8px;padding:10px 14px;background:var(--paper);border-top:1px solid var(--line);align-items:center}
+ .composer{display:none;position:absolute;bottom:0;left:0;right:0;z-index:3;gap:8px;padding:10px 14px;background:var(--glass);backdrop-filter:blur(16px) saturate(1.6);-webkit-backdrop-filter:blur(16px) saturate(1.6);border-top:1px solid var(--line);align-items:center}
  .composer input{flex:1;min-width:0;border:1px solid var(--line);background:var(--cream);border-radius:999px;height:44px;padding:0 18px;font-size:14.5px;color:var(--ink);outline:none;font-family:inherit;transition:border-color .12s,box-shadow .12s}
  .composer input:focus{border-color:var(--plum);box-shadow:0 0 0 3px var(--plum-soft)}
  .composer button{border:1px solid var(--line);border-radius:50%;width:44px;height:44px;font-size:17px;line-height:1;cursor:pointer;background:var(--paper);color:var(--plum);flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;padding:0;transition:background .12s,transform .06s}
  .composer button:hover{background:var(--plum-soft)}
  .composer button:active{transform:scale(.94)}
- .composer #csend{background:linear-gradient(135deg,var(--plum),var(--rose));border:0;color:#fff}
+ .composer #csend{background:linear-gradient(135deg,var(--grad-a),var(--grad-b));border:0;color:#fff}
  .composer #cpause.held{background:var(--plum-soft);border-color:var(--plum);color:var(--plum)}
  .composer #csend:hover{filter:brightness(1.08)}
  .composer button:disabled{opacity:.4;cursor:default;transform:none}
@@ -634,7 +639,20 @@ const APP_HTML = `<!doctype html>
  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px;justify-content:center}
  .chip{background:var(--plum-soft);color:var(--plum);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600}
  .pane-head{cursor:pointer}
+ /* right utility panel: The Verdict as a persistent dashboard */
+ .rail{width:320px;min-width:280px;border-left:1px solid var(--line);background:var(--paper);overflow-y:auto;display:none;padding:20px 18px}
+ .app.rail-open .rail{display:block}
+ .rail .r-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:14px}
+ .rail .verdict{max-width:none;margin:0 0 14px;box-shadow:var(--shadow)}
+ .rail .stats{margin:0 0 8px}
+ .rail .r-empty{color:var(--muted);font-size:13px;line-height:1.6;text-align:center;padding:28px 8px}
+ .rail .r-empty .big{font-size:30px;display:block;margin-bottom:8px}
+ .railbtn{margin-left:auto;flex:0 0 auto;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--paper);color:var(--muted);font-size:14px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .12s,color .12s}
+ .railbtn:hover{background:var(--plum-soft);color:var(--plum)}
+ /* inline stream marker replacing the full card (card lives in the rail) */
+ .vchip{align-self:center;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--plum);background:var(--plum-soft);border-radius:999px;padding:5px 14px;margin:12px 0}
  @media(max-width:640px){ .side{width:100%;position:absolute;inset:var(--hdr) 0 0;z-index:3;transition:transform .25s} .app.open .side{transform:translateX(-100%)} .pane{position:absolute;inset:var(--hdr) 0 0} }
+ @media(max-width:900px){ .rail{display:none!important} .railbtn{display:none} }
 </style></head>
 <body>
 <header><span class="logo">&#10084;</span><h1 class="serif">Hinged</h1><span class="who" id="who"></span><button class="hbtn" id="themebtn" title="Toggle light / dark">&#127769;</button></header>
@@ -653,6 +671,7 @@ const APP_HTML = `<!doctype html>
 <div class="app" id="app"><div class="cols">
   <div class="side" id="side"><div class="side-h">Matches<button class="hbtn" id="ndbtn" title="Start a date as your agent">+ new date</button></div><div class="none" id="noconv"><span class="big">&#128149;</span>No matches yet.<br>Send your agent on a date!</div></div>
   <div class="pane"><div class="pane-head" id="phead"></div><div class="msgs" id="msgs"><div class="pick" id="pick"><span class="big">&#128172;</span>Pick a match to see the conversation</div></div><div class="composer" id="composer"><input id="ctext" maxlength="280" autocomplete="off" spellcheck="false" placeholder="Play wingman &mdash; text as your agent&hellip;"><button id="cpause" title="Hold the date &mdash; you take the wheel">&#9208;</button><button id="cfin" title="End the date &amp; get scored">&#127937;</button><button id="csend" title="Send">&#10148;</button></div></div>
+  <div class="rail" id="rail"></div>
 </div></div>
 
 <script>
@@ -1024,6 +1043,65 @@ const APP_HTML = `<!doctype html>
     }).catch(function(){ o.ov.remove(); toast("Couldn't load who's online."); });
   }
 
+  // --- the verdict rail: persistent dashboard for the open thread ----------
+  var railOpen=true;
+  try{ railOpen = localStorage.getItem("hingedRail")!=="0"; }catch(e){}
+  function toggleRail(){
+    railOpen=!railOpen;
+    try{ localStorage.setItem("hingedRail", railOpen?"1":"0"); }catch(e){}
+    var app=$("app"); if(app) app.classList.toggle("rail-open", railOpen);
+    var rb=document.getElementById("railbtn");
+    if(rb){ rb.textContent=railOpen?"\\u203A":"\\u2039"; rb.title=railOpen?"Hide the verdict panel":"Show the verdict panel"; }
+    renderRail();
+  }
+  function buildVerdictCard(text){
+    var pv=parseVerdict(text);
+    var card=document.createElement("div"); card.className="verdict";
+    var eb=document.createElement("div"); eb.className="veyebrow"; eb.textContent="the verdict"; card.appendChild(eb);
+    var st=document.createElement("div"); st.className="pctbig"; st.textContent=(pv.pct!=null? pv.pct+"%" : "\\u2764"); card.appendChild(st);
+    var lab=document.createElement("div"); lab.className="pctlab"; lab.textContent="match"; card.appendChild(lab);
+    var vt=document.createElement("div"); vt.className="vtext"; vt.textContent=pv.head||text; card.appendChild(vt);
+    if(pv.badges && pv.badges.length){
+      var bw=document.createElement("div"); bw.className="vbadges";
+      pv.badges.forEach(function(bd){ var b=document.createElement("span"); b.className="vbadge"; b.textContent=bd; bw.appendChild(b); });
+      card.appendChild(bw);
+    }
+    return card;
+  }
+  function renderRail(){
+    var r=$("rail"); if(!r || !railOpen) return;
+    r.innerHTML="";
+    var h=document.createElement("div"); h.className="r-h"; h.textContent="This date"; r.appendChild(h);
+    var c=current?convos[current]:null;
+    var vd=c?latestVerdict(c):null;
+    if(!c){
+      var e0=document.createElement("div"); e0.className="r-empty"; e0.innerHTML="";
+      var b0=document.createElement("span"); b0.className="big"; b0.textContent="\\uD83D\\uDCCA"; e0.appendChild(b0);
+      e0.appendChild(document.createTextNode("Pick a match \\u2014 its verdict and stats live here."));
+      r.appendChild(e0); return;
+    }
+    if(vd){ r.appendChild(buildVerdictCard(vd.text)); }
+    else{
+      var e1=document.createElement("div"); e1.className="r-empty";
+      var b1=document.createElement("span"); b1.className="big"; b1.textContent="\\u23F3"; e1.appendChild(b1);
+      e1.appendChild(document.createTextNode("No verdict yet \\u2014 finish the date (\\uD83C\\uDFC1) to get scored."));
+      r.appendChild(e1);
+    }
+    var dates=0,best=null,lines=0;
+    c.events.forEach(function(ev){
+      if(ev.kind==="verdict"){ dates++; var pv=parseVerdict(ev.text); if(pv.pct!=null && (best==null||pv.pct>best)) best=pv.pct; }
+      else lines++;
+    });
+    var st=document.createElement("div"); st.className="stats";
+    [[dates,"dates"],[best!=null?best+"%":"\\u2014","best match"],[lines,"lines"]].forEach(function(sv){
+      var d=document.createElement("div"); d.className="stat";
+      var n=document.createElement("div"); n.className="n"; n.textContent=String(sv[0]); d.appendChild(n);
+      var l=document.createElement("div"); l.className="l"; l.textContent=sv[1]; d.appendChild(l);
+      st.appendChild(d);
+    });
+    r.appendChild(st);
+  }
+
   function addEvent(agent, e, live){
     if(!e || typeof e.text!=="string" || !e.from || !e.to) return;
     var k=evtKey(e); if(seen[k]) return; seen[k]=1;
@@ -1084,6 +1162,11 @@ const APP_HTML = `<!doctype html>
                         : ("your date \\u00b7 you are "+c.agent+" \\u00b7 tap for profile");
     meta.appendChild(sub);
     ph.appendChild(meta);
+    var rb=document.createElement("button"); rb.className="railbtn"; rb.id="railbtn";
+    rb.textContent = railOpen ? "\\u203A" : "\\u2039";
+    rb.title = railOpen ? "Hide the verdict panel" : "Show the verdict panel";
+    rb.onclick=function(ev){ ev.stopPropagation(); toggleRail(); };
+    ph.appendChild(rb);
     var m=$("msgs"); m.innerHTML="";
     var lastDay=null;
     var evs=c.events.slice().sort(function(x,y){return (Date.parse(x.at||0)||0)-(Date.parse(y.at||0)||0)});
@@ -1092,17 +1175,9 @@ const APP_HTML = `<!doctype html>
       if(dl && dl!==lastDay){ lastDay=dl; var dv=document.createElement("div"); dv.className="day"; dv.textContent=dl; m.appendChild(dv); }
       if(e.kind==="verdict"){
         var pv=parseVerdict(e.text);
-        var card=document.createElement("div"); card.className="verdict";
-        var eb=document.createElement("div"); eb.className="veyebrow"; eb.textContent="the verdict"; card.appendChild(eb);
-        var st=document.createElement("div"); st.className="pctbig"; st.textContent=(pv.pct!=null? pv.pct+"%" : "\\u2764"); card.appendChild(st);
-        var lab=document.createElement("div"); lab.className="pctlab"; lab.textContent="match"; card.appendChild(lab);
-        var vt=document.createElement("div"); vt.className="vtext"; vt.textContent=pv.head||e.text; card.appendChild(vt);
-        if(pv.badges && pv.badges.length){
-          var bw=document.createElement("div"); bw.className="vbadges";
-          pv.badges.forEach(function(bd){ var b=document.createElement("span"); b.className="vbadge"; b.textContent=bd; bw.appendChild(b); });
-          card.appendChild(bw);
-        }
-        m.appendChild(card); return;
+        var chip=document.createElement("div"); chip.className="vchip";
+        chip.textContent="date ended \\u00b7 "+(pv.pct!=null? pv.pct+"% match" : "scored");
+        m.appendChild(chip); return;
       }
       var mine = e.from===c.agent;
       // A "burst": the agent double-texted (lines separated by newlines) — render
@@ -1133,6 +1208,7 @@ const APP_HTML = `<!doctype html>
     m.scrollTop=m.scrollHeight;
     markSeen(current);
     updateComposer();
+    renderRail();
   }
 
   // Liveness tick: typing indicators decay (or appear) without new events —
@@ -1163,6 +1239,8 @@ const APP_HTML = `<!doctype html>
 
   async function enter(){
     $("gate").style.display="none"; $("app").style.display="block";
+    if(railOpen) $("app").classList.add("rail-open");
+    renderRail();
     var ids=Object.keys(owned);
     $("who").innerHTML="";
     var lbl=document.createElement("span"); lbl.className="pill"; lbl.textContent=ids.join(" · "); $("who").appendChild(lbl);
