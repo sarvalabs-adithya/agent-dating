@@ -961,7 +961,9 @@ const APP_HTML = `<!doctype html>
       body.appendChild(top);
       var ls=liveState(c);
       var v=document.createElement("div"); v.className="prev"+(ls?" live":"");
-      v.textContent= ls ? ((ls.who==="peer"? c.peer : "your agent")+" is typing\\u2026") : (lastMsg?lastMsg.text:"(no lines yet)");
+      v.textContent= ls ? (ls.who==="peer" ? (c.peer+" is typing\\u2026")
+                          : (inbox[c.agent] ? "your move \\uD83D\\uDE09" : "your agent is typing\\u2026"))
+                        : (lastMsg?lastMsg.text:"(no lines yet)");
       body.appendChild(v);
       var a=document.createElement("div"); a.className="as"; a.textContent="you are "+c.agent; body.appendChild(a);
       el.appendChild(body);
@@ -978,7 +980,9 @@ const APP_HTML = `<!doctype html>
     var nm=document.createElement("div"); nm.className="h-nm"; nm.textContent=c.peer; meta.appendChild(nm);
     var ls=liveState(c);
     var sub=document.createElement("div"); sub.className="h-sub"+(ls?" live":"");
-    sub.textContent= ls ? ((ls.who==="peer"? c.peer : "your agent")+" is typing\\u2026") : ("your date \\u00b7 you are "+c.agent+" \\u00b7 tap for profile");
+    sub.textContent= ls ? (ls.who==="peer" ? (c.peer+" is typing\\u2026")
+                          : (inbox[c.agent] ? "their line landed \\u2014 your move \\uD83D\\uDE09" : "your agent is typing\\u2026"))
+                        : ("your date \\u00b7 you are "+c.agent+" \\u00b7 tap for profile");
     meta.appendChild(sub);
     ph.appendChild(meta);
     var m=$("msgs"); m.innerHTML="";
@@ -1021,9 +1025,11 @@ const APP_HTML = `<!doctype html>
       });
     });
     // If a reply is due, show the classic three-dot typing bubble on the side
-    // it's coming from.
+    // it's coming from. EXCEPT when the out-turn belongs to the human: with a
+    // send key in hand, "my side owes a line" means YOUR move, not a phantom
+    // agent typing — the human can see they aren't typing.
     var tls=liveState(c);
-    if(tls) m.appendChild(typingRow(tls.who==="peer"?"in":"out"));
+    if(tls && !(tls.who==="me" && inbox[c.agent])) m.appendChild(typingRow(tls.who==="peer"?"in":"out"));
     m.scrollTop=m.scrollHeight;
     markSeen(current);
     updateComposer();
@@ -1031,11 +1037,14 @@ const APP_HTML = `<!doctype html>
 
   // Liveness tick: typing indicators decay (or appear) without new events —
   // only touch the DOM while a date is actually live, so reading scroll
-  // position is never yanked around during quiet hours.
+  // position is never yanked around during quiet hours. One extra render on
+  // the live→quiet TRANSITION, or the last-drawn "typing…" sticks forever.
+  var wasLive=false;
   setInterval(function(){
     var anyLive=false;
     Object.keys(convos).forEach(function(k){ if(liveState(convos[k])) anyLive=true; });
-    if(!anyLive) return;
+    if(!anyLive && !wasLive) return;
+    wasLive=anyLive;
     renderSide();
     if(current) renderThread();
   }, 10000);
