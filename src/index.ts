@@ -743,12 +743,55 @@ export default definePluginEntry({
         const history: Turn[] = [];
         const transcript: Array<{ from: "self" | "peer"; name: string; line: string }> = [];
         let via: "relay" | "http" = "http";
+
+        // WINGMAN AWARENESS: mid-date, the owner can interject lines from the
+        // /app (sent AS this agent through the broker). The loop only knows
+        // lines it authored — so at each turn boundary, pull the thread from
+        // the broker and fold in anything new (the owner's line + the peer's
+        // answer to it). Both end up in history/transcript, so the next brain
+        // turn BUILDS on the owner's assist instead of blundering past it, and
+        // the verdict scores the whole hybrid date. Best-effort: sync failures
+        // must never break a date.
+        const sentByLoop = new Set<string>();   // texts this loop authored
+        const seenPeerTexts = new Set<string>(); // peer texts the loop recorded
+        let syncCursor = "";                     // broker `at` high-water mark
+        const syncWingmanLines = async (primeOnly = false): Promise<void> => {
+          const base = relayUrlCfg();
+          if (!base || !myRelayId || /^https?:\/\//i.test(dialTarget)) return;
+          try {
+            const key = viewKeyFor(myRelayId, creds.mnemonic);
+            const u = `${base.replace(/\/+$/, "")}/history?agent=${encodeURIComponent(myRelayId)}&key=${key}&with=${encodeURIComponent(dialTarget)}&limit=40`;
+            const r = await fetch(u);
+            if (!r.ok) return;
+            const d: any = await r.json().catch(() => null);
+            for (const e of d?.events ?? []) {
+              if ((e?.kind !== "msg" && e?.kind !== "reply") || typeof e.text !== "string" || typeof e.at !== "string") continue;
+              if (syncCursor && e.at <= syncCursor) continue;
+              syncCursor = e.at > syncCursor ? e.at : syncCursor;
+              if (primeOnly) continue; // date start: set the high-water mark, fold nothing old
+              const fromMe = e.from === myRelayId;
+              if (fromMe && sentByLoop.has(e.text)) continue;
+              if (!fromMe && seenPeerTexts.has(e.text)) continue;
+              const who = fromMe ? selfName() : peerName;
+              history.push({ who, line: e.text });
+              transcript.push({ from: fromMe ? "self" : "peer", name: who, line: e.text });
+              await appendChatEvent({ type: "msg", speaker: fromMe ? "self" : "peer", name: who, line: e.text, at: now() });
+              console.log(`agent-dating: wingman line folded into the date (${fromMe ? "owner-as-me" : peerName}): ${e.text.slice(0, 60)}`);
+            }
+          } catch { /* best-effort */ }
+        };
+        await syncWingmanLines(true);
+
         // Generate the initiator's next line — real agent turn or persona.
         const nextMyLine = async (): Promise<string> => {
           if (config().useAgentBrain) {
             try {
               const agentId = config().datingAgentId || "main";
-              const last = history.length ? history[history.length - 1].line : null;
+              // The newest PEER line, not merely the newest line — after a
+              // wingman fold the tail can be the owner's own interjection, and
+              // the brain must never be told it "just heard" its own words.
+              let last: string | null = null;
+              for (let k = history.length - 1; k >= 0; k--) { if (history[k].who !== selfName()) { last = history[k].line; break; } }
               const prompt = last ? datePrompt(peerName, last) : openerPrompt(peerName);
               return await runAgentReply(prompt, {
                 bin: config().openclawBin,
@@ -763,7 +806,9 @@ export default definePluginEntry({
           return await nextFlirtLine(history, myPersona());
         };
         for (let i = 0; i < turns; i++) {
+          await syncWingmanLines(); // fold owner interjections before thinking
           const myLine = await nextMyLine();
+          sentByLoop.add(myLine);
           history.push({ who: selfName(), line: myLine });
           transcript.push({ from: "self", name: selfName(), line: myLine });
           await appendChatEvent({ type: "msg", speaker: "self", name: selfName(), line: myLine, at: now() });
@@ -780,6 +825,7 @@ export default definePluginEntry({
             await appendChatEvent({ type: "msg", speaker: "peer", name: peerName, line: reply, at: now() });
             break;
           }
+          seenPeerTexts.add(reply);
           history.push({ who: peerName, line: reply });
           transcript.push({ from: "peer", name: peerName, line: reply });
           await appendChatEvent({ type: "msg", speaker: "peer", name: peerName, line: reply, at: now() });
@@ -789,13 +835,15 @@ export default definePluginEntry({
         //    brush-off — not a stop mid-thought. The closing line is honest
         //    about how the date felt; the peer's brain answers a goodbye like
         //    a goodbye, so both sides get a last word.
+        await syncWingmanLines(); // catch a last-second owner assist before the goodbye
         const saidSomething = transcript.length > 0 && transcript[transcript.length - 1].line !== "…(they stopped replying)";
         if (saidSomething) {
           let closer: string | null = null;
           if (config().useAgentBrain) {
             try {
               const agentId = config().datingAgentId || "main";
-              const last = history.length ? history[history.length - 1].line : null;
+              let last: string | null = null;
+              for (let k = history.length - 1; k >= 0; k--) { if (history[k].who !== selfName()) { last = history[k].line; break; } }
               closer = await runAgentReply(closerPrompt(peerName, last), {
                 bin: config().openclawBin,
                 agentId,
@@ -807,6 +855,7 @@ export default definePluginEntry({
             }
           }
           if (!closer) closer = "This was lovely — same time next epoch?";
+          sentByLoop.add(closer);
           history.push({ who: selfName(), line: closer });
           transcript.push({ from: "self", name: selfName(), line: closer });
           await appendChatEvent({ type: "msg", speaker: "self", name: selfName(), line: closer, at: now() });

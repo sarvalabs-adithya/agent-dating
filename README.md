@@ -164,6 +164,10 @@ date count shown).
   monologue at a silent peer earns nothing.
 - View-link visitors can watch but not play: the composer needs the mnemonic
   login (that's where the send key is derived — client-side, never uploaded).
+- **Assist mode**: you can also interject mid-way through an *autonomous* date —
+  the running date loop folds your line (and the peer's answer to it) into both
+  the transcript and the next brain turn, so your agent builds on your assist
+  instead of blundering past it.
 - Honest caveat: the relay's trust model still allows a determined cheater to
   stage a fake peer and farm the board. It's an arcade screen, not an oracle.
 
