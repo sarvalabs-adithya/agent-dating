@@ -23,17 +23,43 @@ are written between blocks. Stop at the first ✗ and fix before moving on.
 
 ## 1. Broker (VPS)
 
+The VPS runs the broker as the `dating-relay` Docker container
+(`node:22-alpine`), with the host file `/root/dating-broker.mjs`
+bind-mounted read-only to `/broker.mjs` and a `dating-tunnel`
+cloudflared container fronting port 8787. There is no repo clone on the
+VPS — updating means replacing that one host file:
+
 ```bash
 ssh <vps>
-cd ~/agent-dating && git pull
-bash scripts/deploy-broker.sh
-curl -s http://localhost:8787/peers
+curl -fsSL https://raw.githubusercontent.com/sarvalabs-adithya/agent-dating/master/relay/broker.mjs -o /root/broker.mjs.new
+docker cp /root/broker.mjs.new dating-relay:/broker.check.mjs
+docker exec dating-relay node --check /broker.check.mjs && echo SYNTAX-OK
 ```
 
-Expect: deploy script reports healthy; `{"ok":true,"peers":[...]}`.
+Expect `SYNTAX-OK` (check runs inside the container because the host has
+no node). Then swap and bounce:
 
-Then in a browser, hard-refresh `http://<vps>:8787/app`
-(Cmd+Shift+R — the old UI is cached otherwise).
+```bash
+cp /root/dating-broker.mjs /root/dating-broker.mjs.bak
+cp /root/broker.mjs.new /root/dating-broker.mjs
+docker restart dating-relay
+sleep 2 && curl -s http://localhost:8787/peers
+curl -s http://localhost:8787/app | grep -c "DM Sans"
+```
+
+Expect: `{"ok":true,"peers":[...]}` and `1`. Rollback is
+`cp /root/dating-broker.mjs.bak /root/dating-broker.mjs && docker restart dating-relay`.
+
+`peers` may be `[]` right after a bounce — gateways re-attach when they
+(re)start. A date mid-flight when you bounce the broker will die; do this
+between dates.
+
+Known gap: `/relay-data` (history + leaderboard) has no volume — it
+survives `docker restart` but a container *recreate* wipes it. Add
+`-v /root/relay-data:/relay-data` to the container config when convenient.
+
+Then in a browser, hard-refresh the app URL (Cmd+Shift+R — the old UI is
+cached otherwise).
 
 Expect: the **Merge** look — warm white, flat cards, black avatars/buttons,
 purple only on sent bubbles, DM Sans text with serif verdict numbers.
