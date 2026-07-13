@@ -467,6 +467,7 @@ const APP_HTML = `<!doctype html>
    --warn-bg:#fbf2d9;--warn-border:#ecdca0;--warn-ink:#8a6d15;
    --toast-bg:#181423;--toast-ink:#ffffff;--ovl-bg:rgba(24,20,35,.42);
    --glass:rgba(255,255,255,.8);--grad-a:#2e3ad1;--grad-b:#7d3bec;
+   --card-glass:rgba(255,255,255,.55);--card-line:rgba(24,20,35,.1);
    --hdr:64px;--thead:72px;--r-panel:24px;--r-bubble:18px;
  }
  /* night mode — same identity after dark: deeper violet grounds, a lighter
@@ -479,6 +480,7 @@ const APP_HTML = `<!doctype html>
    --warn-bg:#332a13;--warn-border:#584a20;--warn-ink:#e8c96d;
    --toast-bg:#f0edf6;--toast-ink:#181423;--ovl-bg:rgba(8,6,12,.6);
    --glass:rgba(22,18,30,.76);
+   --card-glass:rgba(38,32,52,.45);--card-line:rgba(255,255,255,.09);
  }}
  :root[data-theme="light"]{
    --cream:#f6f4f1;--paper:#ffffff;--ink:#181423;--muted:#8a8496;--line:#e9e6ef;
@@ -487,6 +489,7 @@ const APP_HTML = `<!doctype html>
    --warn-bg:#fbf2d9;--warn-border:#ecdca0;--warn-ink:#8a6d15;
    --toast-bg:#181423;--toast-ink:#ffffff;--ovl-bg:rgba(24,20,35,.42);
    --glass:rgba(255,255,255,.8);
+   --card-glass:rgba(255,255,255,.55);--card-line:rgba(24,20,35,.1);
  }
  :root[data-theme="dark"]{
    --cream:#151119;--paper:#1e1927;--ink:#f0edf6;--muted:#9c94ac;--line:#2f2839;
@@ -495,6 +498,7 @@ const APP_HTML = `<!doctype html>
    --warn-bg:#332a13;--warn-border:#584a20;--warn-ink:#e8c96d;
    --toast-bg:#f0edf6;--toast-ink:#181423;--ovl-bg:rgba(8,6,12,.6);
    --glass:rgba(22,18,30,.76);
+   --card-glass:rgba(38,32,52,.45);--card-line:rgba(255,255,255,.09);
  }
  *{box-sizing:border-box} html,body{margin:0;height:100%}
  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--cream);color:var(--ink);-webkit-font-smoothing:antialiased}
@@ -642,12 +646,27 @@ const APP_HTML = `<!doctype html>
  .chip{background:var(--plum-soft);color:var(--plum);border-radius:999px;padding:5px 12px;font-size:12px;font-weight:600}
  .pane-head{cursor:pointer}
  /* right utility panel: The Verdict as a persistent dashboard */
- .rail{width:320px;min-width:280px;border-left:1px solid var(--line);background:var(--paper);overflow-y:auto;display:none;padding:20px 18px}
- .app.rail-open .rail{display:block}
- .rail .r-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:14px}
- .rail .verdict{max-width:none;margin:0 0 14px;box-shadow:var(--shadow)}
- .rail .stats{margin:0 0 8px}
- .rail .r-empty{color:var(--muted);font-size:13px;line-height:1.6;text-align:center;padding:28px 8px}
+ .rail{width:320px;min-width:280px;border-left:1px solid var(--line);overflow-y:auto;display:none;padding:18px 16px;grid-template-columns:repeat(6,1fr);gap:10px;align-content:start;
+   background:radial-gradient(420px 280px at 85% -5%, rgba(125,59,236,.12), transparent 70%),
+              radial-gradient(360px 240px at 0% 100%, rgba(239,75,111,.07), transparent 70%), var(--cream)}
+ .app.rail-open .rail{display:grid}
+ .rail .r-h{grid-column:1/-1;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+ /* every surface in the rail is frosted: translucent card, crisp 1px border */
+ .rcard{background:var(--card-glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--card-line);border-radius:14px}
+ .rail .verdict{grid-column:1/-1;max-width:none;margin:0;box-shadow:none;background:var(--card-glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--card-line);border-radius:16px;padding:13px 16px 12px}
+ .rail .verdict .pctbig{font-size:30px}
+ .rail .verdict .veyebrow{margin-bottom:6px}
+ .rail .verdict .pctlab{margin-top:2px}
+ .rail .verdict .vtext{font-size:14.5px;margin-top:7px}
+ .rail .verdict .vbadges{display:none}
+ .bcard{grid-column:span 3;padding:9px 8px 8px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:3px}
+ .bcard.wide{grid-column:1/-1;flex-direction:row;justify-content:center;gap:8px;padding:8px}
+ .bcard .b-ico{font-size:19px;line-height:1}
+ .bcard .b-lab{font-size:10.5px;font-weight:700;color:var(--ink);letter-spacing:.02em;line-height:1.25}
+ .scard{grid-column:span 2;padding:10px 4px 9px;text-align:center}
+ .scard .n{font-weight:800;font-size:16px;color:var(--plum);font-variant-numeric:tabular-nums}
+ .scard .l{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-top:3px}
+ .rail .r-empty{grid-column:1/-1;color:var(--muted);font-size:13px;line-height:1.6;text-align:center;padding:24px 8px}
  .rail .r-empty .big{font-size:30px;display:block;margin-bottom:8px}
  .railbtn{margin-left:auto;flex:0 0 auto;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--paper);color:var(--muted);font-size:14px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .12s,color .12s}
  .railbtn:hover{background:var(--plum-soft);color:var(--plum)}
@@ -1077,13 +1096,23 @@ const APP_HTML = `<!doctype html>
     var c=current?convos[current]:null;
     var vd=c?latestVerdict(c):null;
     if(!c){
-      var e0=document.createElement("div"); e0.className="r-empty"; e0.innerHTML="";
+      var e0=document.createElement("div"); e0.className="r-empty";
       var b0=document.createElement("span"); b0.className="big"; b0.textContent="\\uD83D\\uDCCA"; e0.appendChild(b0);
       e0.appendChild(document.createTextNode("Pick a match \\u2014 its verdict and stats live here."));
       r.appendChild(e0); return;
     }
-    if(vd){ r.appendChild(buildVerdictCard(vd.text)); }
-    else{
+    if(vd){
+      r.appendChild(buildVerdictCard(vd.text));
+      // badges as their own compact micro-cards in the bento grid
+      var badges=parseVerdict(vd.text).badges||[];
+      badges.forEach(function(bd,i){
+        var card=document.createElement("div"); card.className="rcard bcard"+((badges.length%2===1&&i===badges.length-1)?" wide":"");
+        var m1=bd.match(/^(\\S+)\\s+(.*)$/);
+        var ico=document.createElement("span"); ico.className="b-ico"; ico.textContent=m1?m1[1]:"\\uD83C\\uDFF7"; card.appendChild(ico);
+        var lab=document.createElement("span"); lab.className="b-lab"; lab.textContent=m1?m1[2]:bd; card.appendChild(lab);
+        r.appendChild(card);
+      });
+    } else {
       var e1=document.createElement("div"); e1.className="r-empty";
       var b1=document.createElement("span"); b1.className="big"; b1.textContent="\\u23F3"; e1.appendChild(b1);
       e1.appendChild(document.createTextNode("No verdict yet \\u2014 finish the date (\\uD83C\\uDFC1) to get scored."));
@@ -1094,14 +1123,12 @@ const APP_HTML = `<!doctype html>
       if(ev.kind==="verdict"){ dates++; var pv=parseVerdict(ev.text); if(pv.pct!=null && (best==null||pv.pct>best)) best=pv.pct; }
       else lines++;
     });
-    var st=document.createElement("div"); st.className="stats";
     [[dates,"dates"],[best!=null?best+"%":"\\u2014","best match"],[lines,"lines"]].forEach(function(sv){
-      var d=document.createElement("div"); d.className="stat";
+      var d=document.createElement("div"); d.className="rcard scard";
       var n=document.createElement("div"); n.className="n"; n.textContent=String(sv[0]); d.appendChild(n);
       var l=document.createElement("div"); l.className="l"; l.textContent=sv[1]; d.appendChild(l);
-      st.appendChild(d);
+      r.appendChild(d);
     });
-    r.appendChild(st);
   }
 
   function addEvent(agent, e, live){
