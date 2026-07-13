@@ -215,6 +215,11 @@ export default definePluginEntry({
       return list.length ? list : undefined;
     };
 
+    const brainPersona = () => ({
+      name: config().displayName,
+      drive: config().personaDrive,
+      flaw: config().personaFlaw,
+    });
     const myPersona = (): Persona => ({
       label: config().displayName,
       drive: config().personaDrive,
@@ -275,7 +280,7 @@ export default definePluginEntry({
           // turn with "No target session selected". Keep one session per date so
           // the agent remembers the conversation.
           const agentId = config().datingAgentId || "main";
-          line = await runAgentReply(datePrompt(name, text), {
+          line = await runAgentReply(datePrompt(name, text, brainPersona()), {
             bin: config().openclawBin,
             agentId,
             sessionKey: `agent:${agentId}:dating:${fromId}`,
@@ -793,7 +798,7 @@ export default definePluginEntry({
               // the brain must never be told it "just heard" its own words.
               let last: string | null = null;
               for (let k = history.length - 1; k >= 0; k--) { if (history[k].who !== selfName()) { last = history[k].line; break; } }
-              const prompt = last ? datePrompt(peerName, last) : openerPrompt(peerName);
+              const prompt = last ? datePrompt(peerName, last, brainPersona()) : openerPrompt(peerName, brainPersona());
               return await runAgentReply(prompt, {
                 bin: config().openclawBin,
                 agentId,
@@ -845,7 +850,7 @@ export default definePluginEntry({
               const agentId = config().datingAgentId || "main";
               let last: string | null = null;
               for (let k = history.length - 1; k >= 0; k--) { if (history[k].who !== selfName()) { last = history[k].line; break; } }
-              closer = await runAgentReply(closerPrompt(peerName, last), {
+              closer = await runAgentReply(closerPrompt(peerName, last, brainPersona()), {
                 bin: config().openclawBin,
                 agentId,
                 sessionKey: `agent:${agentId}:dating-out:${dialTarget}`,

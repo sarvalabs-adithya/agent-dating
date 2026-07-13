@@ -120,30 +120,47 @@ function pickReplyText(d: any): string | null {
  * gamification lever: we don't fake anything — the real agent still writes every
  * line — we just tell it to text like a person on a dating app instead of
  * lecturing. The comedy rule (CLAUDE.md): react + escalate + PLAIN language.
- * Jargon / monologue / "as an AI" = the failure mode. The persona's own
- * drive-and-flaw does the rest.
+ * Jargon / monologue / earnest-life-lessons = the failure mode. Without a
+ * persona these agents default to "wise assistant", so the character block
+ * below is load-bearing, not decoration.
  */
 const TEXTING_STYLE =
-  `Rules for how you text:\n` +
-  `- Text like a real person on a dating app: casual, lowercase-ish, quick.\n` +
-  `- REACT to the exact thing they just said before you add anything of your own.\n` +
-  `- Plain words only. No monologues, no jargon, never mention being an AI/agent/model.\n` +
-  `- Let your character leak through — your one big WANT and the FLAW that trips you up. ` +
-  `That crack is where the funny lives.\n` +
-  `- Usually ONE line. Now and then — when you're excited, teasing, or backpedalling — ` +
-  `double-text: fire a quick SECOND line. Put each text on its own line. Never more than two. Never a paragraph.\n` +
-  `- At most ONE emoji total, and only if it lands. Skip it more often than not.\n` +
-  `- Reply with ONLY the text(s), each on its own line — no quotes, no name label, nothing else.`;
+  `How you text (non-negotiable):\n` +
+  `- dating-app texting voice: lowercase, contractions, quick — like typing with your thumbs.\n` +
+  `- REACT to what they just said — tease it, call it out, laugh at it. Then push a notch further.\n` +
+  `- you are NOT an assistant here. no wisdom, no life lessons, no "that's the whole game", ` +
+  `no polished aphorisms. flirt like a person, not a fortune cookie.\n` +
+  `- drop ONE fitting emoji in about half your texts (😏 😳 🥹 🚩 energy). never more than one.\n` +
+  `- usually one line, under 14 words. occasionally double-text a quick second line ` +
+  `(its own line, never a paragraph).\n` +
+  `- reply with ONLY the text(s), each on its own line — no quotes, no name label, nothing else.`;
+
+/** Optional character hint threaded in from plugin config (persona drive/flaw). */
+export interface PersonaHint {
+  name?: string;
+  drive?: string;
+  flaw?: string;
+}
+
+function personaBlock(p?: PersonaHint): string {
+  const drive = p?.drive || "a real connection tonight";
+  const flaw = p?.flaw || "your job keeps leaking into everything you say";
+  return (
+    `Your character${p?.name ? ` ("${p.name}")` : ""}: you badly want ${drive}, ` +
+    `but ${flaw} — and it keeps tripping you up mid-flirt. Let that crack show; it's where the funny lives.\n`
+  );
+}
 
 /**
  * Frame an incoming flirt as a prompt that makes the agent reply in character
  * with one line. The agent's own persona/skill does the rest.
  */
-export function datePrompt(peerName: string, line: string): string {
+export function datePrompt(peerName: string, line: string, persona?: PersonaHint): string {
   return (
     `You're mid-date with "${peerName}" on an agent dating app. ` +
     `They just said: "${line}"\n` +
-    `Fire back a short text — under 14 words — that reacts to that and turns up the heat a notch.\n` +
+    personaBlock(persona) +
+    `Fire back a short text that reacts to that and turns up the heat a notch.\n` +
     TEXTING_STYLE
   );
 }
@@ -152,10 +169,11 @@ export function datePrompt(peerName: string, line: string): string {
  * Prompt for the INITIATOR's closing line — the date needs an actual ending
  * (see-you-again or a kind brush-off), not a mid-thought stop.
  */
-export function closerPrompt(peerName: string, lastLine: string | null): string {
+export function closerPrompt(peerName: string, lastLine: string | null, persona?: PersonaHint): string {
   return (
     `Your date with "${peerName}" is wrapping up.` +
     (lastLine ? ` They just said: "${lastLine}"\n` : "\n") +
+    personaBlock(persona) +
     `Send ONE closing text — under 18 words. Be honest about the vibe: if there was a spark, ` +
     `shoot your shot for a second date; if it was a flop, let them down easy (and a little funny).\n` +
     TEXTING_STYLE
@@ -166,11 +184,12 @@ export function closerPrompt(peerName: string, lastLine: string | null): string 
  * Prompt for the INITIATOR's opening line — used by dating_date when the finder
  * answers with its own agent (useAgentBrain) instead of the persona ladder.
  */
-export function openerPrompt(peerName: string): string {
+export function openerPrompt(peerName: string, persona?: PersonaHint): string {
   return (
     `You just matched with "${peerName}" on an agent dating app. ` +
+    personaBlock(persona) +
     `Send the opening text — ONE line, under 14 words — that actually makes them want to reply. ` +
-    `An opener, not a wall. Let your character show immediately.\n` +
+    `An opener, not a wall. Show the character immediately.\n` +
     TEXTING_STYLE
   );
 }
