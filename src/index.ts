@@ -39,6 +39,7 @@ import {
   getMyCurrentAgentId,
   newestAgentId,
   stashSelfCard,
+  deprecateMyAgents,
 } from "./moi.js";
 import { buildAgentCard, parseInboundMessage, makeReply, sendMessage, probePeer } from "./a2a.js";
 import { nextFlirtLine, type Turn, type Persona } from "./flirt.js";
@@ -929,6 +930,35 @@ export default definePluginEntry({
           at: now(),
         });
         return { ok: true, ...verdict };
+      },
+    });
+
+    registerTool({
+      name: "dating_deprecate",
+      description:
+        "Retire this wallet's dating identity ON-CHAIN (owner-only): set this agent's registration — or every ACTIVE one this wallet owns — to DEPRECATED on the MOI registry. Discovery stops returning it, and the next dating_register mints a brand-new agent id on the same wallet. Use when the owner wants to start fresh / delete their dating profile.",
+      parameters: Type.Object(
+        {
+          agentId: Type.Optional(
+            Type.String({ description: "One specific agent id to deprecate. Omit to retire ALL of this wallet's ACTIVE registrations." }),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+      execute: async (params: { agentId?: string }) => {
+        const creds = resolveCreds();
+        const res = await deprecateMyAgents(creds, params.agentId?.trim() || undefined);
+        if (!res.deprecated.length && !res.failed.length) {
+          return { ok: true, deprecated: [], message: "Nothing to retire — this wallet has no ACTIVE dating registrations." };
+        }
+        return {
+          ok: res.failed.length === 0,
+          ...res,
+          message:
+            `Retired on-chain: ${res.deprecated.join(", ") || "none"}.` +
+            (res.failed.length ? ` Failed: ${res.failed.map((f) => `${f.agentId} (${f.error})`).join("; ")}.` : "") +
+            ` Restart the gateway to drop the old relay inbox; the next dating_register mints a fresh identity.`,
+        };
       },
     });
 

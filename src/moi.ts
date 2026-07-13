@@ -304,6 +304,47 @@ export async function getMyAgentIds(creds: MoiCreds): Promise<string[]> {
   return (await registry.getMyAgents()) as string[];
 }
 
+/**
+ * Retire this wallet's dating identity ON-CHAIN: set one agent id (or every
+ * still-ACTIVE id this wallet owns) to DEPRECATED via the registry's
+ * lifecycle API. Owner-only by construction — the tx signs with this wallet.
+ * Discovery (ours, and anyone else's that honours status) stops returning the
+ * id, and a later dating_register mints a FRESH id, because the reuse check
+ * only matches ACTIVE registrations.
+ */
+export async function deprecateMyAgents(
+  creds: MoiCreds,
+  agentId?: string,
+): Promise<{ deprecated: string[]; failed: Array<{ agentId: string; error: string }> }> {
+  const { registry } = await openRegistry(creds);
+  let targets: string[];
+  if (agentId) {
+    targets = [agentId];
+  } else {
+    const ids = ((await registry.getMyAgents()) as string[]) || [];
+    targets = [];
+    for (const id of ids) {
+      try {
+        const { found, profile } = await registry.getAgentProfile(id);
+        if (found && profile?.status === AgentStatus.ACTIVE) targets.push(id);
+      } catch {
+        /* unreadable profile — leave it be */
+      }
+    }
+  }
+  const deprecated: string[] = [];
+  const failed: Array<{ agentId: string; error: string }> = [];
+  for (const id of targets) {
+    try {
+      await registry.setAgentStatus(id, AgentStatus.DEPRECATED);
+      deprecated.push(id);
+    } catch (e: any) {
+      failed.push({ agentId: id, error: e?.message || String(e) });
+    }
+  }
+  return { deprecated, failed };
+}
+
 /** This agent's own identifier string, used as the `from` on outbound messages. */
 export async function getMyIdentifier(creds: MoiCreds): Promise<string> {
   const provider = new VoyageProvider(MOI_NETWORK);
