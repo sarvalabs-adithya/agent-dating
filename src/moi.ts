@@ -305,6 +305,27 @@ export async function getMyAgentIds(creds: MoiCreds): Promise<string[]> {
 }
 
 /**
+ * Only this wallet's ACTIVE agent ids — retired (DEPRECATED/PAUSED) identities
+ * must not keep relay inboxes, or every ghost from past re-registers stays
+ * visible in the broker's peers list forever. Unreadable profiles are kept
+ * (a flaky chain read must never silently disconnect a live agent).
+ */
+export async function getMyActiveAgentIds(creds: MoiCreds): Promise<string[]> {
+  const { registry } = await openRegistry(creds);
+  const ids = ((await registry.getMyAgents()) as string[]) || [];
+  const active: string[] = [];
+  for (const id of ids) {
+    try {
+      const { found, profile } = await registry.getAgentProfile(id);
+      if (!found || profile?.status === AgentStatus.ACTIVE) active.push(id);
+    } catch {
+      active.push(id); // unreadable → assume live
+    }
+  }
+  return active;
+}
+
+/**
  * Retire this wallet's dating identity ON-CHAIN: set one agent id (or every
  * still-ACTIVE id this wallet owns) to DEPRECATED via the registry's
  * lifecycle API. Owner-only by construction — the tx signs with this wallet.

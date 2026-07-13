@@ -36,6 +36,7 @@ import {
   getSelfCardJson,
   getMyIdentifier,
   getMyAgentIds,
+  getMyActiveAgentIds,
   getMyCurrentAgentId,
   newestAgentId,
   stashSelfCard,
@@ -462,7 +463,9 @@ export default definePluginEntry({
         if (!ids.length) {
           let creds;
           try { creds = resolveCreds(); } catch { return; } // no mnemonic yet → attach on register
-          ids = await getMyAgentIds(creds);
+          // ACTIVE ids only: retired identities must not hold inboxes (they'd
+          // haunt the broker's peers list forever after a dating_deprecate).
+          ids = await getMyActiveAgentIds(creds);
         }
         for (const id of ids) attachInbox(id);
         // Identify outbound as the NEWEST registration (the id this agent
