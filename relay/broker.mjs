@@ -517,12 +517,14 @@ const APP_HTML = `<!doctype html>
  .day{align-self:stretch;display:flex;align-items:center;gap:12px;font-size:10.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:14px 0 4px}
  .day::before,.day::after{content:"";flex:1;height:1px;background:var(--line)}
  .udot{width:9px;height:9px;border-radius:50%;background:var(--plum);flex:0 0 auto}
- .verdict{align-self:center;max-width:86%;background:var(--paper);border:1px solid var(--line);border-radius:22px;padding:22px 26px 20px;text-align:center;margin:18px auto;box-shadow:0 8px 30px rgba(106,61,232,.10)}
- .verdict .pctbig{font-size:46px;font-weight:800;line-height:1;font-family:Georgia,serif;background:linear-gradient(120deg,var(--plum),var(--rose));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:var(--plum);font-variant-numeric:tabular-nums}
- .verdict .pctlab{font-size:10.5px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-top:4px}
- .verdict .vtext{font-size:15px;color:var(--ink);margin-top:12px;font-weight:600;line-height:1.4;text-wrap:balance}
- .verdict .vbadges{display:flex;flex-wrap:wrap;justify-content:center;gap:7px;margin-top:16px;padding-top:15px;border-top:1px solid var(--line)}
- .verdict .vbadge{font-size:11.5px;font-weight:700;background:var(--plum-soft);color:var(--plum);border-radius:999px;padding:5px 12px;letter-spacing:.01em}
+ .verdict{align-self:center;max-width:86%;min-width:min(300px,86%);background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:18px 26px 16px;text-align:center;margin:18px auto;box-shadow:var(--shadow)}
+ .verdict .veyebrow{font-size:10px;font-weight:800;letter-spacing:.24em;text-transform:uppercase;color:var(--rose);margin-bottom:10px}
+ .verdict .pctbig{font-size:44px;font-weight:700;line-height:1;font-family:Georgia,"Iowan Old Style",serif;color:var(--plum);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+ .verdict .pctlab{font-size:10px;font-weight:800;letter-spacing:.26em;text-transform:uppercase;color:var(--muted);margin-top:5px}
+ .verdict .vtext{font-family:Georgia,"Iowan Old Style",serif;font-style:italic;font-size:18px;font-weight:400;color:var(--ink);margin:13px auto 0;line-height:1.35;max-width:24ch;text-wrap:balance}
+ .verdict .vbadges{display:flex;flex-wrap:wrap;justify-content:center;column-gap:0;row-gap:4px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+ .verdict .vbadge{font-size:11.5px;font-weight:600;color:var(--muted);background:none;padding:0;letter-spacing:.01em;white-space:nowrap}
+ .verdict .vbadge+.vbadge::before{content:"\u00b7";margin:0 9px;color:var(--line);font-weight:700}
  /* jumbo sticker (emoji-only line) — no bubble chrome */
  .row .sticker{font-size:46px;line-height:1.1;padding:2px 6px;background:none!important;box-shadow:none;max-width:none}
  .row .sticker .tm{margin-top:2px}
@@ -1046,6 +1048,7 @@ const APP_HTML = `<!doctype html>
       if(e.kind==="verdict"){
         var pv=parseVerdict(e.text);
         var card=document.createElement("div"); card.className="verdict";
+        var eb=document.createElement("div"); eb.className="veyebrow"; eb.textContent="the verdict"; card.appendChild(eb);
         var st=document.createElement("div"); st.className="pctbig"; st.textContent=(pv.pct!=null? pv.pct+"%" : "\\u2764"); card.appendChild(st);
         var lab=document.createElement("div"); lab.className="pctlab"; lab.textContent="match"; card.appendChild(lab);
         var vt=document.createElement("div"); vt.className="vtext"; vt.textContent=pv.head||e.text; card.appendChild(vt);
