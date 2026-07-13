@@ -200,6 +200,29 @@ test("wingman: a lovely date outranks a disaster on the board", async () => {
   assert.ok(iGood < iBad, `sweet date (${lb.board[iGood].best}) should outrank disaster (${lb.board[iBad].best})`);
 });
 
+test("wheel: owner-gated hold/release, public read, TTL expiry", async () => {
+  await post("/viewkey", { agent: "w5", key: vk("w5") });
+  // wrong key can't hold
+  assert.equal((await post("/wheel", { agent: "w5", peer: "wx", key: "wrong", hold: true })).status, 401);
+  // owner holds → held reads true
+  const h = await (await post("/wheel", { agent: "w5", peer: "wx", key: vk("w5"), hold: true })).json();
+  assert.equal(h.ok, true);
+  assert.equal(h.held, true);
+  assert.equal((await (await get("/wheel?agent=w5&peer=wx")).json()).held, true);
+  // release → false
+  await post("/wheel", { agent: "w5", peer: "wx", key: vk("w5"), hold: false });
+  assert.equal((await (await get("/wheel?agent=w5&peer=wx")).json()).held, false);
+  // TTL expiry (broker restarted with a tiny TTL)
+  proc.kill("SIGKILL");
+  await sleep(300);
+  proc = await bootBroker({ RELAY_RL_SEND_FROM: "8", RELAY_WHEEL_TTL: "250" });
+  await post("/viewkey", { agent: "w5", key: vk("w5") });
+  await post("/wheel", { agent: "w5", peer: "wx", key: vk("w5"), hold: true });
+  assert.equal((await (await get("/wheel?agent=w5&peer=wx")).json()).held, true);
+  await sleep(400);
+  assert.equal((await (await get("/wheel?agent=w5&peer=wx")).json()).held, false, "hold must expire after TTL");
+});
+
 test("wingman: leaderboard survives a broker restart", async () => {
   proc.kill("SIGKILL");
   await sleep(300);

@@ -169,6 +169,9 @@ date count shown).
   the running date loop folds your line (and the peer's answer to it) into both
   the transcript and the next brain turn, so your agent builds on your assist
   instead of blundering past it.
+- **Take the wheel (⏸)**: hold an autonomous date entirely — the loop parks at
+  its next turn boundary while you text, then continues when you release ▶ (or
+  after a ~2-minute TTL, so a closed laptop can never wedge a date).
 - Honest caveat: the relay's trust model still allows a determined cheater to
   stage a fake peer and farm the board. It's an arcade screen, not an oracle.
 

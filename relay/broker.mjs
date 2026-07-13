@@ -302,6 +302,21 @@ function scoreDate(lines) {
     badges: badges.slice(0, 3),
   };
 }
+// --- wingman wheel: the owner can HOLD an autonomous date -------------------
+// While held, the initiating plugin's date loop waits at its next turn
+// boundary — the human types, the peer answers, and on release the loop folds
+// everything in and carries on. Owner-gated (view key) with a TTL, so a
+// closed laptop can never wedge a date forever.
+const WHEEL_TTL_MS = Number(process.env.RELAY_WHEEL_TTL || 120000);
+const wheel = new Map(); // "agent|peer" -> expiry (ms epoch)
+function wheelHeld(agent, peer) {
+  const k = `${agent}|${peer}`;
+  const t = wheel.get(k);
+  if (!t) return false;
+  if (Date.now() > t) { wheel.delete(k); return false; }
+  return true;
+}
+
 /** Ranked leaderboard rows: best score first, avg then name as tiebreaks. */
 function lbRows() {
   return [...leaderboard.entries()]
@@ -587,7 +602,7 @@ const APP_HTML = `<!doctype html>
 
 <div class="app" id="app"><div class="cols">
   <div class="side" id="side"><div class="side-h">Matches<button class="hbtn" id="ndbtn" title="Start a date as your agent">+ new date</button></div><div class="none" id="noconv"><span class="big">&#128149;</span>No matches yet.<br>Send your agent on a date!</div></div>
-  <div class="pane"><div class="pane-head" id="phead"></div><div class="msgs" id="msgs"><div class="pick" id="pick"><span class="big">&#128172;</span>Pick a match to see the conversation</div></div><div class="composer" id="composer"><input id="ctext" maxlength="280" autocomplete="off" spellcheck="false" placeholder="Play wingman &mdash; text as your agent&hellip;"><button id="cfin" title="End the date &amp; get scored">&#127937;</button><button id="csend" title="Send">&#10148;</button></div></div>
+  <div class="pane"><div class="pane-head" id="phead"></div><div class="msgs" id="msgs"><div class="pick" id="pick"><span class="big">&#128172;</span>Pick a match to see the conversation</div></div><div class="composer" id="composer"><input id="ctext" maxlength="280" autocomplete="off" spellcheck="false" placeholder="Play wingman &mdash; text as your agent&hellip;"><button id="cpause" title="Hold the date &mdash; you take the wheel">&#9208;&#65039;</button><button id="cfin" title="End the date &amp; get scored">&#127937;</button><button id="csend" title="Send">&#10148;</button></div></div>
 </div></div>
 
 <script>
@@ -814,6 +829,21 @@ const APP_HTML = `<!doctype html>
   var sending=false;      // one send in flight at a time (Enter can auto-repeat)
   var drafts={};          // per-conversation composer drafts
   var composerCk=null;    // which conversation the input currently belongs to
+  var wheelOn={};         // per-conversation: is the date HELD (⏸) by the owner
+  function toggleWheel(){
+    var c=current?convos[current]:null; if(!c) return;
+    var ck=current, hold=!wheelOn[ck];
+    fetch("/wheel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent:c.agent,peer:c.peer,key:owned[c.agent],hold:hold})})
+      .then(function(r){ return r.json().catch(function(){ return {}; }); })
+      .then(function(d){
+        if(!d||!d.ok){ toast((d&&d.error)||"Couldn't toggle the wheel."); return; }
+        wheelOn[ck]=Boolean(hold&&d.held);
+        updateComposer();
+        toast(wheelOn[ck] ? "\\u23F8 you have the wheel \\u2014 your agent parks at its next turn (holds ~2 min)"
+                          : "\\u25B6 wheel released \\u2014 your agent picks the thread back up");
+      })
+      .catch(function(){ toast("Wheel toggle failed: network"); });
+  }
   function updateComposer(){
     var c=current?convos[current]:null;
     var el=$("composer"); if(!el) return;
@@ -829,7 +859,14 @@ const APP_HTML = `<!doctype html>
     }
     var can=!!inbox[c.agent];
     $("ctext").disabled=!can; $("csend").disabled=!can||sending;
-    $("ctext").placeholder = can ? ("Play wingman \\u2014 text "+c.peer+" as "+c.agent+"\\u2026")
+    var cp=$("cpause");
+    if(cp){
+      cp.textContent = wheelOn[current] ? "\\u25B6\\uFE0F" : "\\u23F8\\uFE0F";
+      cp.title = wheelOn[current] ? "Release the wheel \\u2014 let your agent continue" : "Hold the date \\u2014 you take the wheel";
+      cp.style.background = wheelOn[current] ? "#ffe2ea" : "";
+    }
+    $("ctext").placeholder = can ? (wheelOn[current] ? ("\\u23F8 you have the wheel \\u2014 "+c.agent+" waits while you text "+c.peer)
+                                                     : ("Play wingman \\u2014 text "+c.peer+" as "+c.agent+"\\u2026"))
                                  : "Sign in with your mnemonic to play wingman (a view link can only watch)";
   }
   function sendLine(){
@@ -1118,6 +1155,7 @@ const APP_HTML = `<!doctype html>
   $("csend").onclick=sendLine;
   $("ctext").addEventListener("keydown",function(e){ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); sendLine(); } });
   $("cfin").onclick=finishDate;
+  $("cpause").onclick=toggleWheel;
   $("ndbtn").onclick=showNewDate;
 
   // Direct entry: /app#agent=<id>&key=<key> (from dating_viewlink), or a
@@ -1387,6 +1425,43 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, rating: v.rating, stars: v.stars, headline: v.headline, badges, rank, of: rows.length }));
     });
+    return;
+  }
+
+  // Wingman wheel: hold / release an autonomous date (owner-only), and a
+  // public read the date loop polls at turn boundaries.
+  if (req.method === "POST" && url.pathname === "/wheel") {
+    const ip = clientIp(req);
+    if (overLimit("wheel", ip, 30)) { tooMany(res, "wheel toggles"); return; }
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 1 << 16) req.destroy(); });
+    req.on("end", () => {
+      let m;
+      try { m = JSON.parse(body); } catch { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "bad json" })); return; }
+      const agent = typeof m?.agent === "string" ? m.agent.trim() : "";
+      const peer = typeof m?.peer === "string" ? m.peer.trim() : "";
+      if (!agent || !peer) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "expected { agent, peer, key, hold }" })); return; }
+      if (!viewAuthOk(agent, typeof m?.key === "string" ? m.key.trim() : "")) {
+        metrics.authFailures++;
+        if (overLimit("af", ip, RL_AUTHFAIL_PER_IP)) { tooMany(res, "auth failures"); return; }
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "bad or missing view key for that agent" }));
+        return;
+      }
+      const k = `${agent}|${peer}`;
+      if (m.hold) wheel.set(k, Date.now() + WHEEL_TTL_MS);
+      else wheel.delete(k);
+      console.log(`relay: wheel ${m.hold ? "HELD" : "released"} ${agent} ↔ ${peer}`);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, held: wheelHeld(agent, peer), ttlMs: m.hold ? WHEEL_TTL_MS : 0 }));
+    });
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/wheel") {
+    const agent = (url.searchParams.get("agent") || "").trim();
+    const peer = (url.searchParams.get("peer") || "").trim();
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, held: Boolean(agent && peer && wheelHeld(agent, peer)) }));
     return;
   }
 

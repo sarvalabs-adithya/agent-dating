@@ -788,6 +788,33 @@ export default definePluginEntry({
         };
         await syncWingmanLines(true);
 
+        // WINGMAN WHEEL: the owner can HOLD this date from the /app (⏸). While
+        // held, the loop parks at the turn boundary — the human types, the peer
+        // answers, our sync keeps folding those lines in — and when released
+        // (or after a hard cap) the loop picks the thread back up. Best-effort:
+        // a dead broker means no hold, never a stuck date.
+        const wheelHeldNow = async (): Promise<boolean> => {
+          const base = relayUrlCfg();
+          if (!base || !myRelayId || /^https?:\/\//i.test(dialTarget)) return false;
+          try {
+            const r = await fetch(`${base.replace(/\/+$/, "")}/wheel?agent=${encodeURIComponent(myRelayId)}&peer=${encodeURIComponent(dialTarget)}`);
+            if (!r.ok) return false;
+            const d: any = await r.json().catch(() => null);
+            return Boolean(d?.held);
+          } catch { return false; }
+        };
+        const yieldWheel = async (): Promise<void> => {
+          const HOLD_MAX_MS = 240000; // never park longer than 4 minutes
+          const start = Date.now();
+          let parked = false;
+          while (Date.now() - start < HOLD_MAX_MS && (await wheelHeldNow())) {
+            if (!parked) { parked = true; console.log("agent-dating: wheel HELD by the owner — date loop parked, floor is theirs"); }
+            await new Promise((r) => setTimeout(r, 4000));
+            await syncWingmanLines(); // fold the owner's lines as they land
+          }
+          if (parked) console.log("agent-dating: wheel released — the date loop continues");
+        };
+
         // Generate the initiator's next line — real agent turn or persona.
         const nextMyLine = async (): Promise<string> => {
           if (config().useAgentBrain) {
@@ -813,6 +840,7 @@ export default definePluginEntry({
         };
         for (let i = 0; i < turns; i++) {
           await syncWingmanLines(); // fold owner interjections before thinking
+          await yieldWheel(); // if the owner holds ⏸, park here until release
           const myLine = await nextMyLine();
           sentByLoop.add(myLine);
           history.push({ who: selfName(), line: myLine });
@@ -841,6 +869,7 @@ export default definePluginEntry({
         //    brush-off — not a stop mid-thought. The closing line is honest
         //    about how the date felt; the peer's brain answers a goodbye like
         //    a goodbye, so both sides get a last word.
+        await yieldWheel(); // owner may hold the goodbye too
         await syncWingmanLines(); // catch a last-second owner assist before the goodbye
         const saidSomething = transcript.length > 0 && transcript[transcript.length - 1].line !== "…(they stopped replying)";
         if (saidSomething) {
