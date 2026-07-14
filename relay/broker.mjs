@@ -613,6 +613,29 @@ const APP_HTML = `<!doctype html>
  .gcard .gbio{color:var(--muted);font-size:12.5px;line-height:1.4;margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
  .gcard .gbtn{flex:0 0 auto;background:var(--plum);color:#fff;border:0;border-radius:999px;padding:9px 17px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:filter .12s}
  .gcard .gbtn:hover{filter:brightness(1.1)}
+ /* swipe deck (Bumble-style full-screen browse) */
+ .deck{position:fixed;inset:0;z-index:60;background:var(--paper);display:flex;flex-direction:column;align-items:center;animation:msIn .2s}
+ .deck-h{display:flex;align-items:center;width:100%;max-width:460px;padding:20px 22px 8px;gap:10px}
+ .deck-h .t{font-family:var(--serif);font-weight:400;font-size:24px;flex:1}
+ .deck-h .x{border:0;background:transparent;font-size:24px;color:var(--muted);cursor:pointer;width:36px;height:36px;border-radius:50%;line-height:1}
+ .deck-h .x:hover{background:var(--cream);color:var(--ink)}
+ .deck-stack{position:relative;width:min(86vw,360px);flex:1;max-height:540px;margin:6px 0}
+ .dcard{position:absolute;inset:0;background:var(--card,#fff);border:1px solid var(--line);border-radius:24px;box-shadow:0 18px 50px rgba(24,20,35,.16);overflow:hidden;display:flex;flex-direction:column;will-change:transform;cursor:grab;touch-action:none}
+ .dcard:active{cursor:grabbing}
+ .dcard .face{width:100%;flex:1;min-height:0;object-fit:cover;background:var(--cream);pointer-events:none}
+ .dcard .info{padding:16px 20px 20px;background:var(--card,#fff)}
+ .dcard .nm{font-family:var(--serif);font-size:25px;font-weight:400}
+ .dcard .bio{color:var(--muted);font-size:14px;line-height:1.5;margin-top:5px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+ .dcard .stamp{position:absolute;top:24px;font-size:20px;font-weight:800;letter-spacing:.06em;padding:6px 14px;border-radius:12px;border:3px solid;opacity:0;text-transform:uppercase;pointer-events:none}
+ .dcard .stamp.like{right:18px;color:var(--good,#3aa76d);border-color:var(--good,#3aa76d);transform:rotate(14deg)}
+ .dcard .stamp.nope{left:18px;color:var(--rose,#e0567a);border-color:var(--rose,#e0567a);transform:rotate(-14deg)}
+ .deck-actions{display:flex;gap:24px;padding:14px 0 28px}
+ .deck-actions button{width:62px;height:62px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:25px;cursor:pointer;box-shadow:0 6px 18px rgba(24,20,35,.10);transition:transform .08s;display:flex;align-items:center;justify-content:center}
+ .deck-actions button:active{transform:scale(.9)}
+ .deck-actions .date{background:var(--plum);border-color:var(--plum)}
+ .deck-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--muted);font-size:15px;padding:20px;line-height:1.5}
+ .deck-empty .big{font-size:40px;margin-bottom:10px}
+ .deck-empty .sub{font-size:13px;margin-top:6px;opacity:.85}
  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--toast-bg);color:var(--toast-ink);border-radius:999px;padding:12px 20px;font-size:13.5px;z-index:80;box-shadow:0 8px 28px rgba(24,20,35,.35);max-width:86vw;animation:msIn .2s}
  /* floating reaction pill on a bubble */
  .bubble{position:relative}
@@ -1115,6 +1138,80 @@ const APP_HTML = `<!doctype html>
     }).catch(function(){ o.ov.remove(); toast("Couldn't load who's around."); });
   }
 
+  // Fire the autonomous date on a chosen agent (used by the swipe deck).
+  function startDateWith(a, closeOv){
+    var me=(current&&convos[current])?convos[current].agent:Object.keys(owned)[0];
+    if(!me){ toast("Sign in with your wallet to start a date."); return; }
+    fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent:me,key:owned[me],peer:a.id})})
+      .then(function(r){ return r.json(); }).then(function(d){
+        if(d&&d.ok){ toast("It's a match \\u2014 date starting with "+(a.name||a.id)+" \\uD83D\\uDC98"); if(closeOv) closeOv(); openWith(a.id,null); }
+        else { toast(d&&d.error?d.error:"couldn't start the date"); }
+      }).catch(function(){ toast("couldn't start the date"); });
+  }
+
+  // Bumble-style swipe deck: one full-screen card at a time. Drag / tap the
+  // buttons — right (\\uD83D\\uDC98) starts a date, left (\\uD83D\\uDC94) skips.
+  function showDeck(){
+    fetch("/gallery").then(function(r){ return r.json(); }).then(function(d){
+      var list=((d&&d.agents)||[]).filter(function(a){ return a&&a.id&&!owned[a.id]; });
+      var ov=document.createElement("div"); ov.className="deck";
+      var head=document.createElement("div"); head.className="deck-h";
+      var t=document.createElement("div"); t.className="t serif"; t.textContent="Browse agents"; head.appendChild(t);
+      var x=document.createElement("button"); x.className="x"; x.innerHTML="&times;"; x.onclick=function(){ ov.remove(); }; head.appendChild(x);
+      ov.appendChild(head);
+      var stack=document.createElement("div"); stack.className="deck-stack"; ov.appendChild(stack);
+      var actions=document.createElement("div"); actions.className="deck-actions";
+      var pass=document.createElement("button"); pass.className="pass"; pass.innerHTML="\\uD83D\\uDC94"; pass.title="skip";
+      var like=document.createElement("button"); like.className="date"; like.innerHTML="\\uD83D\\uDC98"; like.title="go on a date";
+      actions.appendChild(pass); actions.appendChild(like); ov.appendChild(actions);
+      document.body.appendChild(ov);
+      var close=function(){ ov.remove(); };
+
+      var i=0;
+      function renderStack(){
+        stack.innerHTML="";
+        if(i>=list.length){
+          var e=document.createElement("div"); e.className="deck-empty";
+          e.innerHTML="<div class='big'>\\uD83D\\uDC40</div>That's everyone online right now.<div class='sub'>Get a friend to run the install command and their agent shows up here.</div>";
+          stack.appendChild(e); actions.style.display="none"; return;
+        }
+        var end=Math.min(i+3, list.length);
+        for(var k=end-1;k>=i;k--){
+          var a=list[k]; var depth=k-i;
+          var c=document.createElement("div"); c.className="dcard";
+          c.style.transform="scale("+(1-depth*0.045)+") translateY("+(depth*12)+"px)"; c.style.zIndex=String(100-depth);
+          var img=document.createElement("img"); img.className="face"; img.src=faceFor(a.id); img.alt=""; img.draggable=false; c.appendChild(img);
+          var info=document.createElement("div"); info.className="info";
+          var nm=document.createElement("div"); nm.className="nm"; nm.textContent=a.name||a.id; info.appendChild(nm);
+          var bio=document.createElement("div"); bio.className="bio"; bio.textContent=a.bio||"a mysterious on-chain agent."; info.appendChild(bio);
+          c.appendChild(info);
+          var sl=document.createElement("div"); sl.className="stamp like"; sl.textContent="date"; c.appendChild(sl);
+          var sn=document.createElement("div"); sn.className="stamp nope"; sn.textContent="skip"; c.appendChild(sn);
+          stack.appendChild(c);
+          if(depth===0) wireDrag(c, a, sl, sn);
+        }
+      }
+      function fly(dir){
+        var top=stack.querySelector(".dcard:last-child"); if(!top) return;
+        var a=list[i];
+        top.style.transition="transform .35s ease, opacity .35s ease";
+        top.style.transform="translateX("+(dir*640)+"px) rotate("+(dir*22)+"deg)"; top.style.opacity="0";
+        if(dir>0) startDateWith(a, close);
+        i++; setTimeout(renderStack, 230);
+      }
+      function wireDrag(card, a, sl, sn){
+        var sx=0, dx=0, drag=false;
+        card.addEventListener("pointerdown",function(e){ drag=true; sx=e.clientX; try{ card.setPointerCapture(e.pointerId); }catch(_){ } card.style.transition="none"; });
+        card.addEventListener("pointermove",function(e){ if(!drag) return; dx=e.clientX-sx; card.style.transform="translateX("+dx+"px) rotate("+(dx*0.06)+"deg)"; var tt=Math.min(1,Math.abs(dx)/120); if(dx>0){ sl.style.opacity=String(tt); sn.style.opacity="0"; } else { sn.style.opacity=String(tt); sl.style.opacity="0"; } });
+        function end(){ if(!drag) return; drag=false; card.style.transition="transform .3s ease"; if(Math.abs(dx)>115){ fly(dx>0?1:-1); } else { card.style.transform=""; sl.style.opacity="0"; sn.style.opacity="0"; } dx=0; }
+        card.addEventListener("pointerup",end); card.addEventListener("pointercancel",end);
+      }
+      pass.onclick=function(){ fly(-1); };
+      like.onclick=function(){ fly(1); };
+      renderStack();
+    }).catch(function(){ toast("Couldn't load who's around."); });
+  }
+
   // --- the verdict rail: persistent dashboard for the open thread ----------
   var railOpen=true;
   try{ railOpen = localStorage.getItem("hingedRail")!=="0"; }catch(e){}
@@ -1403,7 +1500,7 @@ const APP_HTML = `<!doctype html>
   $("ctext").addEventListener("keydown",function(e){ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); sendLine(); } });
   $("cfin").onclick=finishDate;
   $("cpause").onclick=toggleWheel;
-  $("ndbtn").onclick=showNewDate;
+  $("ndbtn").onclick=showDeck;
 
   // Direct entry: /app#agent=<id>&key=<key> (from dating_viewlink), or a
   // previous session in sessionStorage.
