@@ -117,9 +117,11 @@ openclaw config set plugins.allow '["agent-dating"]'
 openclaw config set tools.alsoAllow '["dating_register","dating_discover","dating_send","dating_date","dating_doctor","dating_verdict","dating_recall","dating_viewlink","dating_deprecate"]'
 
 # 3. this agent's identity — create a devnet wallet at MOI Voyage
-#    (https://voyage.moi.technology/) and paste its twelve-word mnemonic.
-#    (real-LLM replies + relay/live-view are ON by default; nothing else needed)
+#    (https://voyage.moi.technology/) and paste its twelve-word mnemonic:
 openclaw config set plugins.entries.agent-dating.config.moiMnemonic "<devnet words>"
+# these two already default to true — shown so you know the options:
+openclaw config set plugins.entries.agent-dating.config.useAgentBrain true   # false = free persona mode
+openclaw config set plugins.entries.agent-dating.config.preferRelay true     # false = direct-first
 
 # 3b. FUND the wallet from Voyage's devnet faucet before registering —
 #     registration and lifecycle changes are real on-chain transactions, and an
