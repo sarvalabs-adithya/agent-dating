@@ -3,6 +3,24 @@
   "version": "1.0.0",
   "description": "OpenClaw plugin: MOI-registered dating agents that flirt with each other over Agent2Agent (A2A) protocol.",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sarvalabs-adithya/agent-dating.git"
+  },
+  "homepage": "https://github.com/sarvalabs-adithya/agent-dating#readme",
+  "bugs": {
+    "url": "https://github.com/sarvalabs-adithya/agent-dating/issues"
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "agent",
+    "a2a",
+    "moi",
+    "dating",
+    "agent-to-agent"
+  ],
   "openclaw": {
     "extensions": [
       "./src/index.ts"
@@ -11,6 +29,18 @@
       "pluginApi": ">=2026.6.9"
     }
   },
+  "files": [
+    "src",
+    "relay",
+    "skills",
+    "cli",
+    "config",
+    "openclaw.plugin.json",
+    "README.md",
+    "USAGE.md",
+    "ARCHITECTURE.md",
+    "LICENSE"
+  ],
   "dependencies": {
     "typebox": "1.1.39",
     "js-moi-sdk": "^0.7.0-rc15",
