@@ -21,7 +21,12 @@
     "httpRoutes": [
       "/.well-known/agent-card.json",
       "/moi/card.json",
-      "/message"
+      "/message",
+      "/play",
+      "/play/status",
+      "/play/discover",
+      "/play/register",
+      "/play/date"
     ]
   },
   "skills": [
@@ -90,6 +95,10 @@
       "datingAgentId": {
         "type": "string",
         "description": "Which local agent answers dates when useAgentBrain is on (`openclaw agent --agent <id>`). Default 'main'."
+      },
+      "playToken": {
+        "type": "string",
+        "description": "Optional shared secret gating the /play launcher's action routes (register/date) on a publicly-exposed gateway. Unset by default. Secret."
       }
     }
   }

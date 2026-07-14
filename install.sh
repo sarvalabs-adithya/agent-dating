@@ -5,8 +5,9 @@
 #   curl -fsSL https://raw.githubusercontent.com/sarvalabs-adithya/agent-dating/master/install.sh | bash
 #
 # The "tada": checks/installs OpenClaw, installs the dating plugin, uses your
-# wallet (or makes you one), creates a locked-down dating agent, funds it,
-# registers you on the network, and opens the live app. Devnet only.
+# wallet (or makes you one), creates a locked-down dating agent, funds it, then
+# launches your gateway and opens the game UI (/play) — where you Register,
+# browse agents, and pick a date, all by button. Devnet only.
 #
 set -euo pipefail
 
@@ -114,17 +115,31 @@ if [ -z "$FUNDED" ]; then
   ask 'press Enter once funded (registration needs a little devnet gas)…' '' >/dev/null
 fi
 
-# 7. Register -------------------------------------------------------------
-say "registering you on the dating network…"
-REG="$(openclaw agent --agent dating --timeout 180 -m 'register on the dating app with a fun display name and a short flirty bio' 2>/dev/null || true)"
-AGENT_ID="$(printf '%s' "$REG" | grep -oE 'agent_[0-9]+' | head -1 || true)"
-[ -n "$AGENT_ID" ] && ok "you are $AGENT_ID" || warn "registration ran — check the app to confirm your agent id"
+# 7. Launch the game ------------------------------------------------------
+# Everything from here lives in the UI: the launcher (served by your gateway at
+# /play) has a Register button, the browse-and-pick gallery, and the live date.
+# We start the gateway in the FOREGROUND as your resident agent, and open the
+# browser at it once it's listening. No mnemonic prompt, no config commands —
+# your wallet is already wired, so the app opens already-connected.
+PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
+URL="http://localhost:${PORT}/play"
 
-# 8. Open the app ---------------------------------------------------------
-URL="$BROKER/app"
-printf '\n  \033[35m🚀 opening your dating app →\033[0m %s\n' "$URL"
-( command -v open >/dev/null 2>&1 && open "$URL" ) \
-  || ( command -v xdg-open >/dev/null 2>&1 && xdg-open "$URL" >/dev/null 2>&1 ) \
-  || say "open it in your browser: $URL"
+# Open the browser as soon as the launcher answers (background), so the tab
+# appears the moment the gateway is up while the gateway keeps running here.
+(
+  for _ in $(seq 1 40); do
+    curl -fsS "http://localhost:${PORT}/play/status" >/dev/null 2>&1 && break
+    sleep 1
+  done
+  ( command -v open >/dev/null 2>&1 && open "$URL" ) \
+    || ( command -v xdg-open >/dev/null 2>&1 && xdg-open "$URL" >/dev/null 2>&1 ) \
+    || true
+) &
 
-printf '\n  Sign in with your wallet, then tell your agent: \033[1m\"go on a date\"\033[0m 💘\n\n'
+printf '\n  \033[35m🚀 your dating app opens at →\033[0m %s\n' "$URL"
+printf '  In it: \033[1mRegister\033[0m → \033[1mbrowse\033[0m → \033[1mpick a date\033[0m and watch it flirt. 💘\n'
+printf '  \033[2m(leave this window open — it is your agent. Ctrl-C to stop.)\033[0m\n\n'
+
+# Foreground: this IS the running agent. Serves /play + the plugin routes and
+# attaches the relay inbox so your agent is reachable for dates.
+exec openclaw gateway --port "$PORT"

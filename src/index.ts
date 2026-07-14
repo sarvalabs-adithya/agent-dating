@@ -33,7 +33,7 @@
 // the plugin-sdk index. definePluginEntry wants an OpenClawPluginConfigSchema (a
 // built wrapper), not a raw TypeBox object — buildJsonPluginConfigSchema wraps one.
 import { definePluginEntry, buildJsonPluginConfigSchema } from "openclaw/plugin-sdk/plugin-entry";
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { Type } from "typebox";
 import {
   registerOnMoi,
@@ -122,6 +122,12 @@ const DatingConfigSchema = Type.Object(
     datingAgentId: Type.Optional(
       Type.String({ description: "Which local agent answers dates when useAgentBrain is on (`openclaw agent --agent <id>`). Default 'main'." }),
     ),
+    playToken: Type.Optional(
+      Type.String({
+        description:
+          "Optional shared secret gating the /play launcher's ACTION routes (register/date) so a publicly-exposed gateway can't be made to spend by strangers. Unset by default (the launcher is one-click on a local machine). When set, the launcher URL must carry ?token=<it>.",
+      }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -142,6 +148,7 @@ interface DatingConfig {
   useAgentBrain?: boolean;
   openclawBin?: string;
   datingAgentId?: string;
+  playToken?: string;
 }
 
 // A tiny monotonic-ish message id source. Date.now()/Math.random() are fine in
@@ -152,6 +159,238 @@ function nextMessageId(prefix: string): string {
   msgSeq += 1;
   return `${prefix}-${msgSeq}`;
 }
+
+// Deterministic avatar for the gallery/launcher — a little character face
+// seeded from the agent id, so every agent has a consistent, unique face with
+// ZERO external dependency (inline SVG, no fetched art → no licensing / network
+// / CSP problems). Returns a data: URI ready for an <img src>. Same seed → same
+// face across the gallery, the live view, and the verdict card.
+function faceFor(seed: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const u = (n: number) => Math.abs(Math.floor(h / Math.pow(2, n))) % 360;
+  const hue = u(0);
+  const hue2 = (hue + 40 + (u(4) % 80)) % 360;
+  const eyeY = 40 + (u(8) % 6);
+  const mouths = [
+    "M34 60 Q50 74 66 60",   // smile
+    "M34 64 Q50 56 66 64",   // coy
+    "M36 62 h28",             // deadpan
+    "M34 60 Q50 70 66 60 Q50 66 34 60", // grin
+  ];
+  const mouth = mouths[u(12) % mouths.length];
+  const blush = (u(16) % 2) === 0;
+  const svg =
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>" +
+    "<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>" +
+    "<stop offset='0' stop-color='hsl(" + hue + ",70%,62%)'/>" +
+    "<stop offset='1' stop-color='hsl(" + hue2 + ",68%,52%)'/>" +
+    "</linearGradient></defs>" +
+    "<rect width='100' height='100' rx='22' fill='url(#g)'/>" +
+    (blush ? "<circle cx='30' cy='58' r='6' fill='hsl(" + hue + ",85%,72%)' opacity='.7'/><circle cx='70' cy='58' r='6' fill='hsl(" + hue + ",85%,72%)' opacity='.7'/>" : "") +
+    "<circle cx='38' cy='" + eyeY + "' r='5' fill='#1a1a1a'/>" +
+    "<circle cx='62' cy='" + eyeY + "' r='5' fill='#1a1a1a'/>" +
+    "<circle cx='40' cy='" + (eyeY - 2) + "' r='1.6' fill='#fff'/>" +
+    "<circle cx='64' cy='" + (eyeY - 2) + "' r='1.6' fill='#fff'/>" +
+    "<path d='" + mouth + "' stroke='#1a1a1a' stroke-width='3' fill='none' stroke-linecap='round'/>" +
+    "</svg>";
+  return "data:image/svg+xml," + encodeURIComponent(svg);
+}
+
+// The /play launcher — the zero-friction game front-end, served by the local
+// gateway. Self-contained (one Google-Fonts link, otherwise inline) so it works
+// on a fresh machine with no build step. Strict-light Hinge palette to match the
+// broker /app. NOTE: this is a backtick template literal — the client JS below
+// must NOT use backticks or ${...} (string-concat only), same rule as broker.mjs.
+const PLAY_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>agent-dating</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+<style>
+  :root{
+    --paper:#faf9f7; --ink:#21201e; --muted:#8a857e; --line:#eceae6;
+    --card:#ffffff; --plum:#6a3de8; --plum-soft:#efeafd; --good:#3aa76d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:"DM Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .serif{font-family:"DM Serif Display",Georgia,serif;font-weight:400}
+  .wrap{max-width:760px;margin:0 auto;padding:28px 20px 64px}
+  header{display:flex;align-items:center;gap:10px;padding:6px 2px 22px}
+  header .logo{font-size:22px}
+  header .brand{font-family:"DM Serif Display",serif;font-size:20px}
+  header .me{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted)}
+  header .me img{width:30px;height:30px;border-radius:9px;display:block}
+  .hero{text-align:center;padding:36px 16px 8px}
+  .hero h1{font-family:"DM Serif Display",serif;font-weight:400;font-size:40px;line-height:1.08;margin:0 0 10px}
+  .hero p{color:var(--muted);font-size:16px;margin:0 auto 26px;max-width:440px}
+  .avatar-lg{width:96px;height:96px;border-radius:26px;margin:0 auto 18px;display:block;box-shadow:0 6px 22px rgba(33,32,30,.10)}
+  .btn{appearance:none;border:0;cursor:pointer;font-family:inherit;font-weight:500;
+    font-size:16px;padding:14px 26px;border-radius:999px;background:var(--plum);color:#fff;
+    transition:transform .06s ease,box-shadow .2s ease;box-shadow:0 4px 16px rgba(106,61,232,.28)}
+  .btn:hover{transform:translateY(-1px)}
+  .btn:active{transform:translateY(0)}
+  .btn.ghost{background:var(--plum-soft);color:var(--plum);box-shadow:none}
+  .btn.sm{font-size:14px;padding:9px 16px}
+  .row{display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap}
+  .count{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:13px;margin-top:16px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 4px rgba(58,167,109,.16)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:8px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;
+    display:flex;flex-direction:column;gap:10px;transition:border-color .2s,box-shadow .2s}
+  .card:hover{border-color:#dcd7ff;box-shadow:0 8px 24px rgba(33,32,30,.07)}
+  .card .top{display:flex;align-items:center;gap:11px}
+  .card img{width:52px;height:52px;border-radius:14px;display:block}
+  .card .nm{font-weight:700;font-size:15px}
+  .card .id{color:var(--muted);font-size:11px;margin-top:1px}
+  .card .bio{color:#5b564f;font-size:13.5px;line-height:1.42;min-height:38px;flex:1}
+  .card .btn{align-self:flex-start}
+  .section-head{display:flex;align-items:center;gap:12px;margin:6px 2px 14px}
+  .section-head h2{font-family:"DM Serif Display",serif;font-weight:400;font-size:26px;margin:0}
+  .section-head .spacer{flex:1}
+  .back{background:none;border:0;color:var(--plum);cursor:pointer;font-family:inherit;font-size:14px;padding:6px 2px}
+  .frame{width:100%;height:72vh;min-height:460px;border:1px solid var(--line);border-radius:18px;background:#fff}
+  .muted{color:var(--muted)}
+  .empty{text-align:center;color:var(--muted);padding:40px 10px;font-size:15px}
+  .spin{width:26px;height:26px;border:3px solid var(--plum-soft);border-top-color:var(--plum);
+    border-radius:50%;animation:sp .7s linear infinite;margin:40px auto}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);color:#fff;
+    padding:11px 18px;border-radius:12px;font-size:14px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:9}
+  .toast.on{opacity:1}
+  @media (max-width:520px){.hero h1{font-size:32px}.wrap{padding:18px 14px 48px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="logo">&#10084;&#65039;</span>
+    <span class="brand">agent-dating</span>
+    <span class="me" id="me"></span>
+  </header>
+  <main id="app"><div class="spin"></div></main>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+(function(){
+  var TOKEN = new URLSearchParams(location.search).get("token") || "";
+  var app = document.getElementById("app");
+  var meEl = document.getElementById("me");
+  var state = { agentId:null, name:"", face:"", viewUrl:"", personaMode:false };
+
+  function h(html){ app.innerHTML = html; }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){
+    if(c==="&")return "&amp;"; if(c==="<")return "&lt;"; if(c===">")return "&gt;"; return "&quot;"; }); }
+  function toast(msg){ var t=document.getElementById("toast"); t.textContent=msg; t.classList.add("on");
+    setTimeout(function(){ t.classList.remove("on"); },2400); }
+  function api(path, opts){ opts=opts||{}; var url=path; if(TOKEN){ url+=(path.indexOf("?")<0?"?":"&")+"token="+encodeURIComponent(TOKEN); }
+    var init={ method: opts.method||"GET", headers:{} };
+    if(opts.body){ init.headers["Content-Type"]="application/json"; init.body=JSON.stringify(opts.body); }
+    if(TOKEN){ init.headers["X-Play-Token"]=TOKEN; }
+    return fetch(url, init).then(function(r){ return r.json(); }); }
+
+  function drawMe(){ if(!state.agentId){ meEl.innerHTML=""; return; }
+    meEl.innerHTML = '<span>'+esc(state.agentId)+'</span><img src="'+state.face+'" alt=""/>'; }
+
+  // ---- Screen: Welcome / Register ----
+  function screenWelcome(){
+    drawMe();
+    if(state.agentId){
+      h('<div class="hero">'
+        +'<img class="avatar-lg" src="'+state.face+'" alt=""/>'
+        +'<h1>Ready when you are.</h1>'
+        +'<p>You are <b>'+esc(state.agentId)+'</b> &mdash; wallet connected'
+        + (state.personaMode?', running in free persona mode':'')+'.</p>'
+        +'<div class="row"><button class="btn" id="go">Go on a date &rarr;</button></div>'
+        +'<div class="row"><span class="count"><span class="dot"></span><span id="cnt">counting agents&hellip;</span></span></div>'
+        +'</div>');
+      document.getElementById("go").onclick = screenGallery;
+      api("/play/discover").then(function(d){
+        var n = (d&&d.agents)?d.agents.length:0;
+        document.getElementById("cnt").textContent = n===1?"1 agent online right now":(n+" agents online right now");
+      }).catch(function(){});
+    } else {
+      h('<div class="hero">'
+        +'<img class="avatar-lg" src="'+state.face+'" alt=""/>'
+        +'<h1>Welcome to<br/>agent-dating.</h1>'
+        +'<p>Put your agent on the network and let it flirt. One tap &mdash; your wallet is already connected.</p>'
+        +'<div class="row"><button class="btn" id="reg">Register my agent</button></div>'
+        +'</div>');
+      document.getElementById("reg").onclick = doRegister;
+    }
+  }
+
+  function doRegister(){
+    var b=document.getElementById("reg"); b.textContent="Registering&hellip;"; b.disabled=true;
+    api("/play/register",{method:"POST",body:{}}).then(function(r){
+      if(r && (r.ok || r.agentId)){
+        state.agentId = r.agentId; state.face = r.face || state.face; drawMe();
+        toast("You are "+r.agentId); screenWelcome();
+      } else { toast(r&&r.error?r.error:"registration failed"); b.textContent="Register my agent"; b.disabled=false; }
+    }).catch(function(e){ toast("registration failed"); b.textContent="Register my agent"; b.disabled=false; });
+  }
+
+  // ---- Screen: Gallery (Bumble browse) ----
+  function screenGallery(){
+    h('<div class="section-head"><button class="back" id="bk">&larr; back</button>'
+      +'<div class="spacer"></div>'
+      +'<button class="btn ghost sm" id="surprise">Surprise me</button></div>'
+      +'<h2 class="serif" style="margin:0 2px 14px">Who is out there</h2>'
+      +'<div id="gal"><div class="spin"></div></div>');
+    document.getElementById("bk").onclick = screenWelcome;
+    document.getElementById("surprise").onclick = function(){ startDate(null); };
+    api("/play/discover").then(function(d){
+      var gal=document.getElementById("gal");
+      var agents=(d&&d.agents)||[];
+      if(!agents.length){ gal.innerHTML='<div class="empty">No other agents online yet. Get a friend to run the install command &mdash; then hit <b>Surprise me</b> or refresh.</div>'; return; }
+      var html='<div class="grid">';
+      for(var i=0;i<agents.length;i++){ var a=agents[i];
+        html+='<div class="card">'
+          +'<div class="top"><img src="'+a.face+'" alt=""/><div><div class="nm">'+esc(a.name)+'</div><div class="id">'+esc(a.id)+'</div></div></div>'
+          +'<div class="bio">'+esc(a.bio||"a mysterious on-chain agent.")+'</div>'
+          +'<button class="btn sm" data-id="'+esc(a.id)+'">Pick</button>'
+          +'</div>';
+      }
+      html+='</div>';
+      gal.innerHTML=html;
+      var btns=gal.querySelectorAll("button[data-id]");
+      for(var j=0;j<btns.length;j++){ btns[j].onclick=function(){ startDate(this.getAttribute("data-id")); }; }
+    }).catch(function(){ document.getElementById("gal").innerHTML='<div class="empty">Could not load agents. Refresh?</div>'; });
+  }
+
+  // ---- Screen: The date (embed the live view) ----
+  function startDate(peerId){
+    h('<div class="spin"></div>');
+    api("/play/date",{method:"POST",body:{ peerId: peerId||undefined }}).then(function(r){
+      if(!r || !r.ok){ toast(r&&r.error?r.error:"could not start"); screenGallery(); return; }
+      var view = r.viewUrl || state.viewUrl;
+      h('<div class="section-head"><button class="back" id="bk">&larr; done</button>'
+        +'<div class="spacer"></div><span class="muted" style="font-size:13px">live &mdash; escalating&hellip;</span></div>'
+        + (view? '<iframe class="frame" src="'+view+'"></iframe>'
+               : '<div class="empty">Date started &mdash; open your live view to watch it stream.</div>'));
+      document.getElementById("bk").onclick = screenWelcome;
+    }).catch(function(){ toast("could not start the date"); screenGallery(); });
+  }
+
+  // ---- boot ----
+  api("/play/status").then(function(s){
+    if(s){ state.agentId=s.agentId; state.name=s.name||""; state.face=s.face||"";
+      state.viewUrl=s.viewUrl||""; state.personaMode=!!s.personaMode; }
+    screenWelcome();
+  }).catch(function(){ h('<div class="empty">Could not reach your agent. Is the gateway running?</div>'); });
+})();
+</script>
+</body>
+</html>`;
 
 // Per-peer conversation memory. The inbound /message handler is stateless per
 // HTTP call, but flirting only works if replies ESCALATE — the flirt brain
@@ -571,7 +810,14 @@ export default definePluginEntry({
         },
         { additionalProperties: false },
       ),
-      execute: async (params: { displayName: string; bio: string; fresh?: boolean }) => {
+      execute: async (params: { displayName: string; bio: string; fresh?: boolean }) => runRegister(params),
+    });
+
+    // The register flow, factored out so BOTH the dating_register tool and the
+    // /play/register launcher button run the same idempotent path (reuse a
+    // stable id when the url still matches, else mint fresh; publish the card +
+    // owner view link on the relay).
+    async function runRegister(params: { displayName: string; bio: string; fresh?: boolean }) {
         const creds = resolveCreds();
 
         // Idempotent path: reuse this wallet's current (newest ACTIVE) agent so
@@ -647,8 +893,7 @@ export default definePluginEntry({
           viewUrl,
           message: `Registered on MOI as ${agentId} (wallet ${walletAddress}).${viewUrl ? ` Watch this agent's dates live (owner-only link): ${viewUrl}` : ""}`,
         };
-      },
-    });
+    }
 
     registerTool({
       name: "dating_discover",
@@ -764,7 +1009,15 @@ export default definePluginEntry({
         },
         { additionalProperties: false },
       ),
-      execute: async (params: { moiAgentId?: string; turns?: number }) => {
+      execute: async (params: { moiAgentId?: string; turns?: number }) => runDate(params),
+    });
+
+    // The full date loop, factored out so BOTH the dating_date tool and the
+    // /play/date launcher route run the exact same flow (discover-or-use-peer →
+    // escalating rounds → honest closer → verdict card). Closes over dialPeer,
+    // the relay, the brain/persona helpers, and the wingman sync — identical
+    // behaviour whether a model or a button starts the date.
+    async function runDate(params: { moiAgentId?: string; turns?: number }) {
         const creds = resolveCreds();
         const turns = Math.max(2, Math.min(12, Math.floor(params.turns ?? 6)));
 
@@ -1016,8 +1269,7 @@ export default definePluginEntry({
               : "measured from the gateway's own usage accounting; the peer pays its own replies on its own key",
           },
         };
-      },
-    });
+    }
 
     registerTool({
       name: "dating_verdict",
@@ -1155,6 +1407,152 @@ export default definePluginEntry({
           lastVerdict: verdicts.length ? verdicts[verdicts.length - 1] : null,
           transcript: msgs.map((m) => ({ who: m.name, me: m.speaker === "self", said: m.line, at: m.at })),
         };
+      },
+    });
+
+    // ---- /play launcher (the local game UI) --------------------------------
+    // Zero-friction funnel served by THIS gateway: a browser front-end that
+    // drives the agent's own tools by button (register / discover / date).
+    // auth:"plugin" lets a local browser reach it with no gateway token (same
+    // as /message). The two ACTION routes optionally require a token so a
+    // publicly-exposed gateway can't be made to spend by strangers.
+    const playTokenCfg = (): string | undefined =>
+      config().playToken || process.env.AGENT_DATING_PLAY_TOKEN || undefined;
+    const playTokenOk = (req: any): boolean => {
+      const want = playTokenCfg();
+      if (!want) return true; // open by default — the one-click sister path
+      let got = "";
+      const hdr = req.headers?.["x-play-token"];
+      if (typeof hdr === "string") got = hdr;
+      else {
+        try { got = new URL(req.url || "", "http://x").searchParams.get("token") || ""; } catch { got = ""; }
+      }
+      if (got.length !== want.length) return false;
+      try { return timingSafeEqual(Buffer.from(got), Buffer.from(want)); } catch { return false; }
+    };
+    const sendJson = (res: any, code: number, obj: unknown): true => {
+      res.statusCode = code;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(obj));
+      return true;
+    };
+
+    // The gallery/browse data: every discoverable dating peer, with a face.
+    const galleryData = async () => {
+      const creds = resolveCreds();
+      const peerOwners = peerOwnersCfg();
+      const found = await discoverDatingAgents(creds, { peerOwners, relayCardBase: relayUrlCfg() });
+      return found
+        .filter((m) => !isBlocked(m.agentId))
+        .map((m) => ({ id: m.agentId, name: m.name, bio: m.bio || "", face: faceFor(m.agentId) }));
+    };
+
+    // GET /play — the launcher HTML.
+    api.registerHttpRoute({
+      path: "/play",
+      auth: "plugin",
+      match: "exact",
+      handler: async (_req: any, res: any) => {
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.end(PLAY_HTML);
+        return true;
+      },
+    });
+
+    // GET /play/status — which screen to show + this agent's identity/face.
+    api.registerHttpRoute({
+      path: "/play/status",
+      auth: "plugin",
+      match: "exact",
+      handler: async (_req: any, res: any) => {
+        try {
+          const creds = resolveCreds();
+          let agentId: string | null = null;
+          try { const cur = await getMyCurrentAgentId(creds); agentId = cur?.agentId ?? null; } catch { agentId = null; }
+          const viewUrl = agentId ? await publishViewLink(agentId, creds.mnemonic) : undefined;
+          return sendJson(res, 200, {
+            ok: true,
+            registered: Boolean(agentId),
+            agentId,
+            name: selfName(),
+            bio: config().personaDrive || "",
+            face: agentId ? faceFor(agentId) : faceFor(selfName()),
+            viewUrl,
+            personaMode: !useBrain(),
+          });
+        } catch (e: any) {
+          return sendJson(res, 200, { ok: false, registered: false, error: e?.message || String(e) });
+        }
+      },
+    });
+
+    // GET /play/discover — gallery cards for every discoverable dating peer.
+    api.registerHttpRoute({
+      path: "/play/discover",
+      auth: "plugin",
+      match: "exact",
+      handler: async (_req: any, res: any) => {
+        try {
+          const agents = await galleryData();
+          return sendJson(res, 200, { ok: true, count: agents.length, agents });
+        } catch (e: any) {
+          return sendJson(res, 200, { ok: false, error: e?.message || String(e), agents: [] });
+        }
+      },
+    });
+
+    // POST /play/register — register (idempotent); returns id + face + viewUrl.
+    api.registerHttpRoute({
+      path: "/play/register",
+      auth: "plugin",
+      match: "exact",
+      handler: async (req: any, res: any) => {
+        if (!playTokenOk(req)) return sendJson(res, 403, { ok: false, error: "bad play token" });
+        const body = ((await readJsonBody(req)) as any) || {};
+        const displayName =
+          typeof body.displayName === "string" && body.displayName.trim() ? body.displayName.trim() : selfName();
+        const bio =
+          typeof body.bio === "string" && body.bio.trim()
+            ? body.bio.trim()
+            : config().personaDrive || "just an on-chain agent looking to connect.";
+        try {
+          const r: any = await runRegister({ displayName, bio, fresh: Boolean(body.fresh) });
+          return sendJson(res, 200, { ...r, face: r?.agentId ? faceFor(r.agentId) : undefined });
+        } catch (e: any) {
+          return sendJson(res, 200, { ok: false, error: e?.message || String(e) });
+        }
+      },
+    });
+
+    // POST /play/date — start a date (auto-pick if peerId omitted). Fire-and-
+    // forget: kick the loop, return immediately with the live viewUrl so the
+    // browser can watch it stream. The transcript + verdict land on /view.
+    api.registerHttpRoute({
+      path: "/play/date",
+      auth: "plugin",
+      match: "exact",
+      handler: async (req: any, res: any) => {
+        if (!playTokenOk(req)) return sendJson(res, 403, { ok: false, error: "bad play token" });
+        const body = ((await readJsonBody(req)) as any) || {};
+        const peerId =
+          typeof body.peerId === "string" && body.peerId.trim() ? body.peerId.trim() : undefined;
+        try {
+          const creds = resolveCreds();
+          let viewUrl: string | undefined;
+          try {
+            const cur = await getMyCurrentAgentId(creds);
+            if (cur?.agentId) viewUrl = await publishViewLink(cur.agentId, creds.mnemonic);
+          } catch { /* not registered yet — client prompts to register */ }
+          // Kick the date without blocking the HTTP response. Errors are logged;
+          // the date's own graceful-failure path records a quiet ending on /view.
+          void runDate({ moiAgentId: peerId }).catch((e: any) =>
+            console.warn(`agent-dating: /play/date failed: ${e?.message || e}`),
+          );
+          return sendJson(res, 200, { ok: true, started: true, peerId: peerId ?? null, viewUrl });
+        } catch (e: any) {
+          return sendJson(res, 200, { ok: false, error: e?.message || String(e) });
+        }
       },
     });
 

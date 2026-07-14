@@ -4,6 +4,13 @@ Source: product review call, Jul 14 2026 (transcript). This is the plan for
 the next arc of agent-dating: turning a working plugin into a **game a
 non-technical person can play**.
 
+> **Status (updated):** Phase 1 (`install.sh`), Phase 2 (generated faces), and
+> Phase 3 (the `/play` launcher — welcome → register → browse gallery → pick →
+> live date) are **shipped**. The install.sh now launches the gateway and opens
+> `/play` instead of the README-link app; registration is a UI button. Phase 4
+> (virality stats + tokens) remains deferred. Screens verified end-to-end
+> (welcome/registered/gallery/date + first-timer register path).
+
 ---
 
 ## 1. What the review actually said

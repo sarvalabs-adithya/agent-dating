@@ -210,6 +210,7 @@ export async function discoverDatingAgents(creds, opts = {}) {
             agentId: id,
             name: ac?.name || id,
             url: ac?.url || profile.url,
+            bio: ac?.description,
         });
     }
     return matches;

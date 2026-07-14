@@ -43,6 +43,8 @@ export interface Match {
   name: string;
   /** The peer's A2A rpc endpoint (…/a2a/rpc) — ready for sendA2A. */
   url: string;
+  /** The peer's dating bio (card_uri agent_card.description) — for the gallery. */
+  bio?: string;
 }
 
 /**
@@ -53,6 +55,7 @@ export interface Match {
 interface AgentCardJson {
   agent_card?: {
     name?: string;
+    description?: string;
     url?: string;
     skills?: Array<{ tags?: string[] }>;
   };
@@ -293,6 +296,7 @@ export async function discoverDatingAgents(
       agentId: id,
       name: ac?.name || id,
       url: ac?.url || profile.url,
+      bio: ac?.description,
     });
   }
   return matches;
