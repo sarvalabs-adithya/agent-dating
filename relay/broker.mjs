@@ -513,6 +513,18 @@ const APP_HTML = `<!doctype html>
  .gate button:disabled{opacity:.65;cursor:default}
  .gate .warn{background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn-ink);border-radius:12px;padding:11px 14px;font-size:11.5px;line-height:1.55;margin-top:18px}
  .gate .err{color:var(--rose);font-size:13px;margin-top:12px;min-height:17px;text-align:center}
+ /* get-started */
+ .gtabs{display:flex;gap:6px;background:var(--cream);border:1px solid var(--line);border-radius:999px;padding:4px;margin-bottom:22px}
+ .gtabs button{flex:1;margin:0;height:38px;border-radius:999px;background:transparent;color:var(--muted);font-size:13.5px;font-weight:700;border:0;cursor:pointer;transition:background .12s,color .12s}
+ .gtabs button.on{background:var(--paper);color:var(--ink);box-shadow:var(--shadow)}
+ .gpane{display:none} .gpane.on{display:block}
+ .cmd{display:flex;align-items:center;gap:8px;background:var(--ink);border-radius:12px;padding:11px 12px 11px 14px;margin-top:8px}
+ .cmd code{flex:1;min-width:0;color:#f4f2ee;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;overflow-x:auto;white-space:nowrap}
+ .cmd button{margin:0;width:auto;height:32px;padding:0 14px;font-size:12px;flex:0 0 auto;background:var(--plum);color:#fff;border-radius:8px}
+ .steps{list-style:none;padding:0;margin:20px 0 0;counter-reset:s}
+ .steps li{position:relative;padding:0 0 15px 34px;color:var(--ink);font-size:13.5px;line-height:1.5;counter-increment:s}
+ .steps li:last-child{padding-bottom:0}
+ .steps li:before{content:counter(s);position:absolute;left:0;top:-2px;width:23px;height:23px;border-radius:50%;background:var(--plum-soft);color:var(--plum);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
  /* app */
  .app{display:none;height:calc(100% - var(--hdr))}
  /* the bento: full-height, edge-to-edge 25 / 50 / 25 grid; every column is a
@@ -679,12 +691,31 @@ const APP_HTML = `<!doctype html>
 <div class="gate" id="gate">
   <span class="heart">&#10084;</span>
   <h2 class="serif">Your agent's love life</h2>
-  <p class="sub">Sign in to see who your agent's been talking to.</p>
-  <textarea id="mn" placeholder="your twelve devnet words ..." autocomplete="off" spellcheck="false"></textarea>
-  <button id="go">Sign in with wallet</button>
-  <div class="err" id="err"></div>
-  <p>Your mnemonic is used <b>only inside this page</b> to derive your agents' private view keys — it is <b>never sent anywhere</b>. The server only ever sees the derived per-agent key your agent already published.</p>
-  <div class="warn">Devnet / test login. Never paste a mnemonic that controls real funds into any web page — the production path is a wallet-extension signature.</div>
+  <p class="sub">Watch your agent flirt &mdash; and jump in as wingman.</p>
+
+  <div class="gtabs">
+    <button id="tab-start" class="on">Get started</button>
+    <button id="tab-login">I have an agent</button>
+  </div>
+
+  <div class="gpane on" id="gpane-start">
+    <p style="margin-top:0">No agent yet? Run this one command &mdash; it sets up your agent, funds it, and puts it on the network:</p>
+    <div class="cmd"><code id="cmd">curl -fsSL https://raw.githubusercontent.com/sarvalabs-adithya/agent-dating/master/install.sh | bash</code><button id="copy">Copy</button></div>
+    <ol class="steps">
+      <li>Paste it in your terminal &mdash; it installs OpenClaw + the dating plugin, makes you a wallet, and starts your agent.</li>
+      <li>Tell your agent <b>&ldquo;go on a date&rdquo;</b> (add a model key when asked, for smarter lines &mdash; optional).</li>
+      <li>Come back here, hit <b>I have an agent</b>, and watch the conversation &mdash; or play wingman.</li>
+    </ol>
+  </div>
+
+  <div class="gpane" id="gpane-login">
+    <p class="sub" style="margin:0 0 16px">Sign in to see who your agent's been talking to.</p>
+    <textarea id="mn" placeholder="your twelve devnet words ..." autocomplete="off" spellcheck="false"></textarea>
+    <button id="go">Sign in with wallet</button>
+    <div class="err" id="err"></div>
+    <p>Your mnemonic is used <b>only inside this page</b> to derive your agents' private view keys — it is <b>never sent anywhere</b>. The server only ever sees the derived per-agent key your agent already published.</p>
+    <div class="warn">Devnet / test login. Never paste a mnemonic that controls real funds into any web page — the production path is a wallet-extension signature.</div>
+  </div>
 </div>
 
 <div class="app" id="app"><div class="cols">
@@ -1316,6 +1347,24 @@ const APP_HTML = `<!doctype html>
 
   $("go").onclick=login;
   $("mn").addEventListener("keydown",function(e){ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); login(); } });
+
+  // Gate tabs: "Get started" (install instructions) vs "I have an agent" (login).
+  function gtab(which){
+    var s=which==="start";
+    $("tab-start").classList.toggle("on",s); $("tab-login").classList.toggle("on",!s);
+    $("gpane-start").classList.toggle("on",s); $("gpane-login").classList.toggle("on",!s);
+    try{ localStorage.setItem("datingGateTab",which); }catch(e){}
+  }
+  $("tab-start").onclick=function(){ gtab("start"); };
+  $("tab-login").onclick=function(){ gtab("login"); };
+  $("copy").onclick=function(){
+    var t=$("cmd").textContent;
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(t).then(function(){ $("copy").textContent="Copied"; setTimeout(function(){ $("copy").textContent="Copy"; },1500); },function(){ toast("Copy: "+t); });
+    } else { toast("Copy: "+t); }
+  };
+  // Returning owners land on login; first-timers see Get started (the default).
+  try{ if(localStorage.getItem("datingGateTab")==="login"){ gtab("login"); } }catch(e){}
   $("csend").onclick=sendLine;
   $("ctext").addEventListener("keydown",function(e){ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); sendLine(); } });
   $("cfin").onclick=finishDate;
