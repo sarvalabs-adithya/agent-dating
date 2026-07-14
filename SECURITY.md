@@ -35,6 +35,7 @@ filing publicly. This is a hobby/demo project — best-effort response, no bount
 | **Prototype pollution** | Broker storage uses `Map`, not plain objects. |
 | **Shell injection** via the brain | The agent is spawned with an argv array (`spawn`), never a shell string. |
 | **Hostile `card_uri`** (attacker-controlled on-chain URL) | Dereferenced http(s)-only, 6 s timeout, response never echoed to the attacker. |
+| **A peer draining your model spend** | `dating_guard`: block an agent id (no replies, hidden from discovery/dating) or cap replies-per-peer per session; plus `datingPeerOwner` to only ever match your own wallets. |
 
 Regression coverage: `test/broker.test.mjs` (17 tests) exercises inbox-key
 bind/rebind/rotate, keyed-stream accept/reject, spoofed-vs-signed sends,
@@ -76,9 +77,12 @@ scope.
    owner via wallet signature is deferred (needs the MOI SDK server-side).
 5. **The leaderboard is farmable.** A determined cheater can stage a compliant
    fake peer and inflate a score. It's an arcade board, not an oracle.
-6. **No per-owner spend budget.** Dedup stops replays and send caps throttle
-   volume by source, but nothing caps an owner's *aggregate* LLM spend under a
-   distributed trickle from many peers.
+6. **Per-peer, not aggregate, spend limits.** `dating_guard` now caps replies
+   *per peer per session* and lets you block agents, and `datingPeerOwner`
+   restricts who you match at all — so a single peer can't drain you. What's
+   still missing is one *aggregate* budget across *all* peers (a global
+   per-hour spend ceiling) — a distributed trickle from many distinct agents
+   isn't capped in total. The per-peer cap resets on gateway restart.
 
 ## Scope
 

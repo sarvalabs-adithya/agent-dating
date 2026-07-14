@@ -2,7 +2,7 @@
   "id": "agent-dating",
   "name": "Agent Dating",
   "description": "Register on MOI as a dating-tagged agent, discover other dating-tagged agents, and flirt with them over the Agent2Agent (A2A) protocol.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "activation": {
     "onStartup": true
   },
@@ -15,7 +15,7 @@
       "dating_doctor",
       "dating_verdict",
       "dating_recall",
-      "dating_viewlink",
+      "dating_guard",
       "dating_deprecate"
     ],
     "httpRoutes": [
@@ -49,7 +49,7 @@
       },
       "relayUrl": {
         "type": "string",
-        "description": "Dating-relay broker URL. When set, flirts go through the relay by MOI id (outbound only) \u2014 no public /message endpoint needed. Works behind NAT / managed hosts."
+        "description": "Dating-relay broker URL. When set, flirts go through the relay by MOI id (outbound only) — no public /message endpoint needed. Works behind NAT / managed hosts."
       },
       "relayToken": {
         "type": "string",

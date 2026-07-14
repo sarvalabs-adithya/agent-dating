@@ -10,7 +10,7 @@
  *     dating_doctor     — probe peers, report why a date won't connect
  *     dating_verdict    — score the chatlog, post the star card
  *     dating_recall     — answer "how was your date?" from the local log
- *     dating_viewlink   — re-mint the owner's private live-view link
+ *     dating_guard      — block agents / cap replies per peer (owner spend limits)
  *     dating_deprecate  — retire this wallet's dating id on-chain (owner-only)
  *   routes (this agent's face, reachable by peers):
  *     GET  /.well-known/agent-card.json  — discovery document
@@ -54,6 +54,7 @@ import { appendChatEvent, readChatEvents, now } from "./chatlog.js";
 import { scoreDate, type VerdictLine } from "./verdict.js";
 import { RelayClient } from "./relay.js";
 import { runAgentReply, datePrompt, openerPrompt, closerPrompt } from "./agentbrain.js";
+import { loadGuard, saveGuard, isBlocked, refuseReason, noteReply, repliesSoFar } from "./guard.js";
 import {
   DEFAULT_RELAY_URL,
   DEFAULT_RELAY_TOKEN,
@@ -299,7 +300,14 @@ export default definePluginEntry({
     // Shared "answer an incoming flirt" logic, used by BOTH the inbound HTTP
     // /message route and the relay inbox. Keeps per-peer history so replies
     // escalate, and logs both sides to the chat view.
-    async function replyTo(fromId: string, text: string, peerName?: string): Promise<string> {
+    async function replyTo(fromId: string, text: string, peerName?: string): Promise<string | null> {
+      // Owner guardrails: refuse blocked agents, and stop once a peer has pulled
+      // its per-session reply cap out of us (each reply is a paid model turn).
+      const refuse = refuseReason(fromId);
+      if (refuse) {
+        console.log(`agent-dating: not answering ${fromId} — ${refuse} (dating_guard)`);
+        return null;
+      }
       const name = peerName || fromId;
       const history = conversationWith(fromId);
       history.push({ who: name, line: text });
@@ -332,6 +340,7 @@ export default definePluginEntry({
         line = await nextFlirtLine(history, myPersona());
       }
       history.push({ who: selfName(), line });
+      noteReply(fromId); // count this reply toward the per-peer cap
       await ensureMeta(name);
       await appendChatEvent({ type: "msg", speaker: "peer", name, line: text, at: now() });
       await appendChatEvent({ type: "msg", speaker: "self", name: selfName(), line, at: now() });
@@ -455,6 +464,7 @@ export default definePluginEntry({
         void (async () => {
           if (alreadyAnswered(m.id)) return;
           const line = await replyTo(m.from, m.text);
+          if (line == null) return; // blocked or over the reply cap — stay silent
           const ok = await relay!.post({ to: m.from, from: m.to, id: m.id, kind: "reply", text: line });
           // A reply the broker can't deliver is a date silently dying on the
           // other side — make it loud so the logs name the failing hop.
@@ -648,7 +658,8 @@ export default definePluginEntry({
       execute: async () => {
         const creds = resolveCreds();
         const peerOwners = peerOwnersCfg();
-        const matches = await discoverDatingAgents(creds, { peerOwners, relayCardBase: relayUrlCfg() });
+        const found = await discoverDatingAgents(creds, { peerOwners, relayCardBase: relayUrlCfg() });
+        const matches = found.filter((m) => !isBlocked(m.agentId)); // hide blocked agents
         return { ok: true, count: matches.length, matches };
       },
     });
@@ -763,9 +774,14 @@ export default definePluginEntry({
         // The transport (relay vs direct HTTP) is chosen per-hop by dialPeer.
         let peerId = params.moiAgentId;
         let peerName = peerId || "";
+        // Don't date someone you've blocked, even if named explicitly.
+        if (peerId && !/^https?:\/\//i.test(peerId) && isBlocked(peerId)) {
+          return { ok: false, reason: "blocked", message: `${peerId} is on your block list (dating_guard). Unblock it first to date it.` };
+        }
         if (!peerId) {
           const peerOwners = peerOwnersCfg();
-          const matches = await discoverDatingAgents(creds, { peerOwners, relayCardBase: relayUrlCfg() });
+          const found = await discoverDatingAgents(creds, { peerOwners, relayCardBase: relayUrlCfg() });
+          const matches = found.filter((m) => !isBlocked(m.agentId)); // skip blocked agents
           if (!matches.length) {
             return {
               ok: false,
@@ -1059,21 +1075,55 @@ export default definePluginEntry({
     });
 
     registerTool({
-      name: "dating_viewlink",
+      name: "dating_guard",
       description:
-        "Get the owner's PRIVATE live-view link for this agent — the broker /view URL scoped to this agent's dates only. This is wallet-login done safely: the access key is derived from the wallet mnemonic INSIDE the agent, so the owner proves ownership by having the link and never types the mnemonic into any website. Re-publishes the key to the broker, so the link works even after a broker restart. Use when the owner asks to watch / see their agent's dates in a browser.",
-      parameters: Type.Object({}, { additionalProperties: false }),
-      execute: async () => {
-        const creds = resolveCreds();
-        await relayReady;
-        let id = myRelayId;
-        if (!id) {
-          try { id = (await getMyCurrentAgentId(creds))?.agentId ?? null; } catch { /* not registered yet */ }
+        "Set safety limits on who this agent talks to and how much it spends. Block or unblock a specific agent id (a blocked agent gets no reply and won't appear in discovery or dating), cap how many replies any one peer can pull out of this agent per gateway session (each reply is a paid model turn — 0 = unlimited), or read the current settings. Use when the owner says 'block that agent', 'stop replying to X', or 'limit how much it spends'.",
+      parameters: Type.Object(
+        {
+          action: Type.Union(
+            [Type.Literal("status"), Type.Literal("block"), Type.Literal("unblock"), Type.Literal("cap")],
+            { description: "status = read settings; block/unblock a specific agentId; cap = set maxRepliesPerPeer." },
+          ),
+          agentId: Type.Optional(Type.String({ description: "The MOI agent id to block or unblock." })),
+          maxRepliesPerPeer: Type.Optional(
+            Type.Number({ description: "For action 'cap': max replies to one peer per session. 0 = unlimited." }),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+      execute: async (params: { action: "status" | "block" | "unblock" | "cap"; agentId?: string; maxRepliesPerPeer?: number }) => {
+        const g = loadGuard();
+        if (params.action === "block") {
+          const id = (params.agentId || "").trim();
+          if (!id) return { ok: false, message: "block needs an agentId." };
+          if (!g.blocked.includes(id)) g.blocked.push(id);
+          saveGuard(g);
+          return { ok: true, action: "block", agentId: id, blocked: g.blocked, message: `Blocked ${id}. It gets no replies and is hidden from discovery.` };
         }
-        if (!id) return { ok: false, message: "No registered identity yet — run dating_register first." };
-        const viewUrl = await publishViewLink(id, creds.mnemonic);
-        if (!viewUrl) return { ok: false, message: "No relay broker configured — the live view runs on the relay." };
-        return { ok: true, agentId: id, viewUrl, message: `Private view for ${id} (owner-only, don't share): ${viewUrl}` };
+        if (params.action === "unblock") {
+          const id = (params.agentId || "").trim();
+          g.blocked = g.blocked.filter((x) => x !== id);
+          saveGuard(g);
+          return { ok: true, action: "unblock", agentId: id, blocked: g.blocked, message: `Unblocked ${id}.` };
+        }
+        if (params.action === "cap") {
+          g.maxRepliesPerPeer = Math.max(0, Math.floor(Number(params.maxRepliesPerPeer) || 0));
+          saveGuard(g);
+          const how = g.maxRepliesPerPeer === 0 ? "unlimited" : `${g.maxRepliesPerPeer} replies/peer per session`;
+          return { ok: true, action: "cap", maxRepliesPerPeer: g.maxRepliesPerPeer, message: `Reply cap set to ${how}.` };
+        }
+        // status
+        const active = g.blocked.map((id) => ({ agentId: id, repliesThisSession: repliesSoFar(id) }));
+        return {
+          ok: true,
+          action: "status",
+          blocked: g.blocked,
+          maxRepliesPerPeer: g.maxRepliesPerPeer,
+          activeCounts: active,
+          message:
+            `Blocked: ${g.blocked.length ? g.blocked.join(", ") : "none"}. ` +
+            `Reply cap: ${g.maxRepliesPerPeer === 0 ? "unlimited" : `${g.maxRepliesPerPeer}/peer per session`}.`,
+        };
       },
     });
 
@@ -1174,6 +1224,11 @@ export default definePluginEntry({
         // escalate; both sides logged to the chat view). Same brain the relay
         // inbox uses — the transport differs, the behaviour doesn't.
         const line = await replyTo(parsed.from, parsed.text);
+        if (line == null) {
+          res.statusCode = 403;
+          res.end(JSON.stringify({ error: "not accepting messages from this agent" }));
+          return true;
+        }
         res.statusCode = 200;
         res.end(JSON.stringify(makeReply(selfName(), line)));
         return true;

@@ -124,7 +124,7 @@ agent's public face):
 | `dating_doctor` | Diagnostics: probe peers, report exactly why a date won't connect. |
 | `dating_verdict` | Score an exchange; post the star card. |
 | `dating_recall` | Read the local date log so ANY session can answer "how was your date?" (see §5.4 for why this must exist). |
-| `dating_viewlink` | Re-mint the owner's private view URL (see §6.4). |
+| `dating_guard` | Owner spend/safety limits: block/unblock an agent id, or cap replies-per-peer per session (see §6.8). |
 | `dating_deprecate` | Retire this wallet's dating identity on-chain — `setAgentStatus(DEPRECATED)`, owner-only (see §6.7). |
 
 | Route | Role |
@@ -459,8 +459,8 @@ atomic** — `writeFileSync` + `renameSync` — because an async write→rename
 race lost the newest entry under SIGKILL; CI caught it). **Honest caveat,
 stated up front:** mnemonic-paste is devnet/test-grade UX; the production
 path is a wallet-extension **signature** over a challenge — nothing secret
-typed at all. `dating_viewlink` also returns a pre-authenticated `appUrl` so
-the agent can simply hand its owner the link.
+typed at all. `dating_register` returns a pre-authenticated view URL so the
+agent can hand its owner the link directly.
 
 ### 6.5 The wingman layer — humans in the loop, scored like agents
 
@@ -506,6 +506,27 @@ how "how much did that date cost?" gets a real answer.
 deprecated id is never reused; the next register mints fresh on the same
 wallet), and relay inbox attachment (`getMyActiveAgentIds`). Streams already
 attached for a deprecated id drop on the next gateway restart.
+
+### 6.8 Owner spend/safety limits — `dating_guard` (`src/guard.ts`)
+
+Because every real reply is a paid model turn on the receiver's key (§5.5), the
+owner needs a throttle. `dating_guard` maintains a small persisted state file
+(`$OPENCLAW_HOME/.openclaw/agent-dating.guard.json`, atomic write) with a
+**denylist** and a **`maxRepliesPerPeer`** cap:
+
+- **Block** — a blocked agent id is refused on the inbound path (`replyTo`
+  returns null → the relay handler stays silent, `/message` returns 403) and
+  filtered out of both `dating_discover` and `dating_date` (auto-pick and
+  explicit target). No reply, no discovery, no dating.
+- **Cap** — an in-memory per-peer reply counter (resets per gateway session);
+  once a peer has pulled `maxRepliesPerPeer` replies, `refuseReason` trips and
+  further lines from it are dropped. Bounds a runaway or hostile burst.
+
+State is re-read on every inbound line, so a `dating_guard` change takes effect
+immediately — no restart. The denylist and cap value persist; only the running
+count is in-memory. Combined with `datingPeerOwner` (never match strangers at
+all), this closes the single-peer drain vector; an *aggregate* cross-peer
+budget is still an open gap (§7).
 
 ---
 
@@ -691,7 +712,7 @@ All parameters are typed via TypeBox; a small `registerTool` adapter sets
 | `dating_date` | `moiAgentId?:string` (omit = auto-pick first discovered; may be an http URL to skip discovery), `turns?:number` (6, clamped `max(2,min(12,·))`) | `{ok, peer, lines, transcript, verdict, tokenCost}` |
 | `dating_verdict` | *(none)* | scores the whole chatlog, posts a `verdict` event |
 | `dating_deprecate` | `agentId?:string` (omit = retire ALL ACTIVE ids on the wallet) | `{ok, deprecated:[…]}` |
-| `dating_viewlink` | *(none)* | owner-only `/app` + `/view` URLs |
+| `dating_guard` | `action` (`status`/`block`/`unblock`/`cap`), `agentId?`, `maxRepliesPerPeer?` | block/unblock an agent id, or cap replies-per-peer per session (0 = unlimited); enforced on the inbound path + discovery |
 | `dating_recall` | `lines?:number` (40, clamped `max(5,min(200,·))`) | recent date log |
 
 Plugin config schema (`DatingConfigSchema`, all optional,
