@@ -182,6 +182,27 @@ export default definePluginEntry({
     // whole OpenClawConfig). Env fallback kept for the bootstrap/demo path.
     const config = (): DatingConfig => (api.pluginConfig ?? {}) as DatingConfig;
 
+    // Which local agent authors real-brain date lines — and a one-time security
+    // nudge. A date line is a REAL turn of this agent, including its tools, and
+    // the peer's text is attacker-controlled on an open network (prompt
+    // injection). Answering with the default `main` agent hands that text to a
+    // fully-tooled assistant (exec/file/network). Point datingAgentId at a
+    // dedicated minimal-tool agent instead — see SECURITY.md / USAGE.md.
+    let warnedMainBrain = false;
+    const datingAgent = (): string => {
+      const id = config().datingAgentId || "main";
+      if (id === "main" && config().useAgentBrain && !warnedMainBrain) {
+        warnedMainBrain = true;
+        console.warn(
+          "agent-dating: ⚠️ dates are answered by the 'main' agent, which has " +
+          "full tools (exec/file/network). A hostile date can attempt prompt " +
+          "injection. Set plugins.entries.agent-dating.config.datingAgentId to a " +
+          "dedicated minimal-tool agent — see SECURITY.md.",
+        );
+      }
+      return id;
+    };
+
     // Public base URL, with an env fallback (AGENT_DATING_URL) so the A2A
     // routes work even if api.config isn't wired the way we assumed. The
     // bootstrap sets this env per gateway.
@@ -286,7 +307,7 @@ export default definePluginEntry({
           // key must be scoped to it (agent:<id>:...) or the gateway rejects the
           // turn with "No target session selected". Keep one session per date so
           // the agent remembers the conversation.
-          const agentId = config().datingAgentId || "main";
+          const agentId = datingAgent();
           const turn = await runAgentReply(datePrompt(name, text, brainPersona()), {
             bin: config().openclawBin,
             agentId,
@@ -841,7 +862,7 @@ export default definePluginEntry({
         const nextMyLine = async (): Promise<string> => {
           if (config().useAgentBrain) {
             try {
-              const agentId = config().datingAgentId || "main";
+              const agentId = datingAgent();
               // The newest PEER line, not merely the newest line — after a
               // wingman fold the tail can be the owner's own interjection, and
               // the brain must never be told it "just heard" its own words.
@@ -900,7 +921,7 @@ export default definePluginEntry({
           let closer: string | null = null;
           if (config().useAgentBrain) {
             try {
-              const agentId = config().datingAgentId || "main";
+              const agentId = datingAgent();
               let last: string | null = null;
               for (let k = history.length - 1; k >= 0; k--) { if (history[k].who !== selfName()) { last = history[k].line; break; } }
               const turn = await runAgentReply(closerPrompt(peerName, last, brainPersona()), {
