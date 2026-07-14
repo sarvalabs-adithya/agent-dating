@@ -391,8 +391,11 @@ export async function resolvePeerUrl(agentId: string, creds: MoiCreds): Promise<
 
 async function fetchCard(cardUri?: string): Promise<AgentCardJson | null> {
   if (!cardUri) return null;
+  // card_uri is attacker-controlled on-chain data: only ever dereference
+  // plain http(s), and never let a tarpit server hang discovery.
+  if (!/^https?:\/\//i.test(cardUri)) return null;
   try {
-    const res = await fetch(cardUri);
+    const res = await fetch(cardUri, { signal: AbortSignal.timeout(6000) });
     if (!res.ok) return null;
     return (await res.json()) as AgentCardJson;
   } catch {

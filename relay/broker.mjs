@@ -27,7 +27,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { createHmac } from "node:crypto";
+import { createHmac, createHash, timingSafeEqual } from "node:crypto";
 
 const PORT = Number(process.env.RELAY_PORT || 8787);
 const TOKEN = process.env.RELAY_TOKEN || "";
@@ -184,10 +184,16 @@ function putViewKey(agent, key) {
   viewKeys.set(agent, key);
   saveJsonMap(KEYS_FILE, viewKeys);
 }
+/** Timing-safe string equality (hash both sides to equalize length). */
+function safeEq(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || !a || !b) return false;
+  return timingSafeEqual(createHash("sha256").update(a).digest(),
+                         createHash("sha256").update(b).digest());
+}
 /** Constant-shape auth check for scoped access to one agent's chats. */
 function viewAuthOk(agent, key) {
   const want = viewKeys.get(agent);
-  return Boolean(want && key && key === want);
+  return Boolean(want && key && safeEq(key, want));
 }
 
 // --- inbox keys (identity binding) -----------------------------------------
@@ -200,8 +206,9 @@ function viewAuthOk(agent, key) {
 const inboxKeys = loadJsonMap(IKEYS_FILE); // agent id -> key
 function bindInboxKey(agent, key, old) {
   const cur = inboxKeys.get(agent);
-  if (cur && cur !== key && old !== cur) return false; // rebind needs proof
-  if (cur !== key) {
+  const same = cur ? safeEq(key, cur) : false;
+  if (cur && !same && !safeEq(old || "", cur)) return false; // rebind needs proof
+  if (!same) {
     inboxKeys.set(agent, key);
     saveJsonMap(IKEYS_FILE, inboxKeys);
     metrics.inboxBinds++;
@@ -1410,7 +1417,7 @@ const server = http.createServer((req, res) => {
     const ikey = (url.searchParams.get("ikey") || "").trim();
     const bound = inboxKeys.get(agent);
     if (bound) {
-      if (ikey !== bound) {
+      if (!safeEq(ikey, bound)) {
         metrics.authFailures++;
         if (overLimit("af", ip, RL_AUTHFAIL_PER_IP)) { tooMany(res, "auth failures"); return; }
         res.writeHead(401, { "Content-Type": "application/json" });
@@ -1654,7 +1661,7 @@ const server = http.createServer((req, res) => {
       // inbox key (auth = HMAC(key, to|id|text)) — nobody can send as a keyed
       // agent without its wallet. Keyless senders pass (legacy plugins).
       const senderKey = inboxKeys.get(fromId);
-      if (senderKey && m.auth !== msgAuthTag(senderKey, m.to, m.id ?? null, m.text)) {
+      if (senderKey && !safeEq(typeof m.auth === "string" ? m.auth : "", msgAuthTag(senderKey, m.to, m.id ?? null, m.text))) {
         metrics.authFailures++;
         if (overLimit("af", ip, RL_AUTHFAIL_PER_IP)) { tooMany(res, "auth failures"); return; }
         res.writeHead(401, { "Content-Type": "application/json" });

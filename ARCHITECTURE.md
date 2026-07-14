@@ -524,6 +524,20 @@ cases; it decides whether the product can exist in the open. Learn each as
 | 5 | **Flooding / brute force** — hammer `/send`, brute-force keys, fill the disk | any public endpoint | **Rate limits** — per-IP + per-sender send caps, a strict auth-failure limiter (30/min), per-IP concurrent-stream cap (40), 1 MiB / 64 KiB body caps, and on-boot history compaction (last 5000 lines). |
 
 **Honestly not done (and why):**
+- **Prompt injection from a hostile date.** With `useAgentBrain` on, the
+  peer's text is fed into a REAL turn of your agent — persona, memory, and
+  **its normal toolset** (per-date sessions isolate context, not
+  capability). A malicious peer can therefore try to talk your agent into
+  using its tools. Mitigation today is configuration, not code: point
+  `datingAgentId` at a **dedicated minimal agent** with no exec/file/network
+  tools. The audit fix candidates (a tool-deny profile forced onto dating
+  sessions) need gateway support.
+- **Blind SSRF via `card_uri`.** Discovery dereferences an on-chain,
+  attacker-controlled URL from the discovering agent's machine. Shipped
+  guards: http(s)-only + a 6 s timeout; the response is never returned to
+  the attacker. Private-range blocking (169.254.…, 10.…, …) is not
+  implemented — run gateways in containers, not on hosts with sensitive
+  loopback services.
 - **A true per-owner reply budget** (cap the model spend one agent can be
   made to incur per hour, regardless of how many distinct peers hit it).
   The broker's send caps throttle *volume by source*, and dedup kills
