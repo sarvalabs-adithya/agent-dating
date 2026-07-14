@@ -370,6 +370,25 @@ function record(obj) {
   }
 }
 
+// Per-agent stats for the browse profiles, computed live from history: how many
+// dates it has been on (verdict events), its best match %, and total lines. No
+// plugin data needed — the broker already saw every line, so every agent gets a
+// real profile even without persona config.
+function agentStats(id) {
+  let dates = 0, lines = 0, best = 0;
+  for (const e of history) {
+    if (!e || !involves(e, id)) continue;
+    if (e.kind === "verdict") {
+      dates++;
+      const m = /(\d+(?:\.\d+)?)\s*\/\s*5/.exec(e.text || "");
+      if (m) { const r = parseFloat(m[1]); if (r > best) best = r; }
+    } else {
+      lines++;
+    }
+  }
+  return { dates, lines, bestMatch: best > 0 ? Math.round((best / 5) * 100) : null };
+}
+
 // Self-contained WhatsApp-style live view. No deps, no build; connects to
 // /events (SSE) and renders each conversation pair as its own thread.
 const VIEW_HTML = `<!doctype html>
@@ -636,6 +655,10 @@ const APP_HTML = `<!doctype html>
  .deck-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--muted);font-size:15px;padding:20px;line-height:1.5}
  .deck-empty .big{font-size:40px;margin-bottom:10px}
  .deck-empty .sub{font-size:13px;margin-top:6px;opacity:.85}
+ .dcard .dstats{margin-top:10px;font-size:12.5px;color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+ .dcard .dchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+ .dcard .dchip{background:var(--cream);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:600}
+ .dcard .peek{position:absolute;bottom:14px;right:16px;font-size:11px;color:var(--muted);opacity:.75;pointer-events:none}
  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--toast-bg);color:var(--toast-ink);border-radius:999px;padding:12px 20px;font-size:13.5px;z-index:80;box-shadow:0 8px 28px rgba(24,20,35,.35);max-width:86vw;animation:msIn .2s}
  /* floating reaction pill on a bubble */
  .bubble{position:relative}
@@ -1149,6 +1172,47 @@ const APP_HTML = `<!doctype html>
       }).catch(function(){ toast("couldn't start the date"); });
   }
 
+  // Compact live-stats line for a browse card, from the broker's /gallery data.
+  function statLine(a){
+    var bits=[];
+    if(a.bestMatch!=null) bits.push("\\uD83D\\uDC98 "+a.bestMatch+"% best");
+    if(a.dates) bits.push("\\uD83D\\uDDD3 "+a.dates+" date"+(a.dates>1?"s":""));
+    if(a.lines) bits.push("\\uD83D\\uDCAC "+a.lines+" lines");
+    return bits.length? bits.join("  \\u00B7  ") : "\\u2728 new here \\u2014 no dates yet";
+  }
+  // Cheap vibe chips: the first few distinctive words of the bio.
+  function tagsFromBio(b){
+    if(!b) return [];
+    var stop={that:1,this:1,they:1,them:1,than:1,then:1,over:1,into:1,just:1,about:1,asks:1,still:1,never:1,being:1,your:1,with:1,once:1,past:1,haunted:1,surprisingly:1};
+    var words=(b.toLowerCase().match(/[a-z][a-z-]{3,}/g)||[]); var seen={}, out=[];
+    for(var i=0;i<words.length && out.length<3;i++){ var w=words[i].split("-")[0]; if(w.length<4||stop[w]||seen[w]) continue; seen[w]=1; out.push(w); }
+    return out;
+  }
+  // Full profile modal for a browse card (reuses the .profile styles).
+  function deckProfile(a){
+    var ov=document.createElement("div"); ov.className="ovl"; ov.style.zIndex="70"; ov.onclick=function(ev){ if(ev.target===ov) ov.remove(); };
+    var p=document.createElement("div"); p.className="profile";
+    var x=document.createElement("button"); x.className="x"; x.innerHTML="&times;"; x.onclick=function(){ ov.remove(); }; p.appendChild(x);
+    var aw=document.createElement("div"); aw.className="p-av-wrap"; var im=document.createElement("img"); im.className="av"; im.src=faceFor(a.id); im.alt=""; aw.appendChild(im); p.appendChild(aw);
+    var h=document.createElement("h3"); h.textContent=a.name||a.id; p.appendChild(h);
+    var pid=document.createElement("div"); pid.className="pid"; pid.textContent=a.id; p.appendChild(pid);
+    var st=document.createElement("div"); st.className="stats";
+    [[a.dates||0,"dates"],[a.bestMatch!=null?a.bestMatch+"%":"\\u2014","best match"],[a.lines||0,"lines"]].forEach(function(sv){
+      var d=document.createElement("div"); d.className="stat";
+      var n=document.createElement("div"); n.className="n"; n.textContent=String(sv[0]); d.appendChild(n);
+      var l=document.createElement("div"); l.className="l"; l.textContent=sv[1]; d.appendChild(l);
+      st.appendChild(d);
+    });
+    p.appendChild(st);
+    if(a.bio){ var pc=document.createElement("div"); pc.className="promptcard"; var q=document.createElement("div"); q.className="q"; q.textContent="About me"; pc.appendChild(q); var ab=document.createElement("div"); ab.className="a"; ab.textContent=a.bio; pc.appendChild(ab); p.appendChild(pc); }
+    var tw=tagsFromBio(a.bio); if(tw.length){ var ch=document.createElement("div"); ch.className="chips"; tw.forEach(function(w){ var s=document.createElement("span"); s.className="chip"; s.textContent=w; ch.appendChild(s); }); p.appendChild(ch); }
+    var go=document.createElement("button"); go.style.cssText="margin-top:16px;width:100%;background:var(--plum);color:#fff;border:0;border-radius:999px;height:46px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit"; go.textContent="Go on a date \\uD83D\\uDC98";
+    go.onclick=function(){ ov.remove(); startDateWith(a, null); };
+    p.appendChild(go);
+    ov.appendChild(p);
+    document.body.appendChild(ov);
+  }
+
   // Bumble-style swipe deck: one full-screen card at a time. Drag / tap the
   // buttons — right (\\uD83D\\uDC98) starts a date, left (\\uD83D\\uDC94) skips.
   function showDeck(){
@@ -1184,7 +1248,10 @@ const APP_HTML = `<!doctype html>
           var info=document.createElement("div"); info.className="info";
           var nm=document.createElement("div"); nm.className="nm"; nm.textContent=a.name||a.id; info.appendChild(nm);
           var bio=document.createElement("div"); bio.className="bio"; bio.textContent=a.bio||"a mysterious on-chain agent."; info.appendChild(bio);
+          var stats=document.createElement("div"); stats.className="dstats"; stats.textContent=statLine(a); info.appendChild(stats);
+          var tw=tagsFromBio(a.bio); if(tw.length){ var chips=document.createElement("div"); chips.className="dchips"; tw.forEach(function(w){ var ch=document.createElement("span"); ch.className="dchip"; ch.textContent=w; chips.appendChild(ch); }); info.appendChild(chips); }
           c.appendChild(info);
+          var peek=document.createElement("div"); peek.className="peek"; peek.textContent="tap for profile"; c.appendChild(peek);
           var sl=document.createElement("div"); sl.className="stamp like"; sl.textContent="date"; c.appendChild(sl);
           var sn=document.createElement("div"); sn.className="stamp nope"; sn.textContent="skip"; c.appendChild(sn);
           stack.appendChild(c);
@@ -1200,11 +1267,19 @@ const APP_HTML = `<!doctype html>
         i++; setTimeout(renderStack, 230);
       }
       function wireDrag(card, a, sl, sn){
-        var sx=0, dx=0, drag=false;
-        card.addEventListener("pointerdown",function(e){ drag=true; sx=e.clientX; try{ card.setPointerCapture(e.pointerId); }catch(_){ } card.style.transition="none"; });
-        card.addEventListener("pointermove",function(e){ if(!drag) return; dx=e.clientX-sx; card.style.transform="translateX("+dx+"px) rotate("+(dx*0.06)+"deg)"; var tt=Math.min(1,Math.abs(dx)/120); if(dx>0){ sl.style.opacity=String(tt); sn.style.opacity="0"; } else { sn.style.opacity=String(tt); sl.style.opacity="0"; } });
-        function end(){ if(!drag) return; drag=false; card.style.transition="transform .3s ease"; if(Math.abs(dx)>115){ fly(dx>0?1:-1); } else { card.style.transform=""; sl.style.opacity="0"; sn.style.opacity="0"; } dx=0; }
+        var sx=0, dx=0, drag=false, moved=false;
+        card.addEventListener("pointerdown",function(e){ drag=true; moved=false; sx=e.clientX; dx=0; try{ card.setPointerCapture(e.pointerId); }catch(_){ } card.style.transition="none"; });
+        card.addEventListener("pointermove",function(e){ if(!drag) return; dx=e.clientX-sx; if(Math.abs(dx)>6) moved=true; card.style.transform="translateX("+dx+"px) rotate("+(dx*0.06)+"deg)"; var tt=Math.min(1,Math.abs(dx)/120); if(dx>0){ sl.style.opacity=String(tt); sn.style.opacity="0"; } else { sn.style.opacity=String(tt); sl.style.opacity="0"; } });
+        function end(){
+          if(!drag) return; drag=false; card.style.transition="transform .3s ease";
+          if(Math.abs(dx)>115){ fly(dx>0?1:-1); }
+          else { card.style.transform=""; sl.style.opacity="0"; sn.style.opacity="0"; }
+          dx=0;
+        }
         card.addEventListener("pointerup",end); card.addEventListener("pointercancel",end);
+        // A stationary press = a tap → open the full profile. Guarded so a swipe
+        // (which also emits a click) doesn't pop the modal.
+        card.addEventListener("click",function(){ if(!moved) deckProfile(a); });
       }
       pass.onclick=function(){ fly(-1); };
       like.onclick=function(){ fly(1); };
@@ -1597,7 +1672,7 @@ const server = http.createServer((req, res) => {
         const ac = (c && c.agent_card) ? c.agent_card : c;
         if (ac) { name = ac.name || (c && (c.name || c.displayName)) || id; bio = ac.description || (c && c.description) || ""; }
       } catch { /* card not JSON — fall back to the id */ }
-      out.push({ id, name, bio });
+      out.push({ id, name, bio, ...agentStats(id) });
     }
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true, agents: out }));
