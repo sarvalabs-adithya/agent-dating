@@ -147,7 +147,7 @@ KEY="$(ask 'AI model key (Anthropic sk-ant-… or OpenAI sk-…), or Enter to sk
 if [ -n "$KEY" ]; then
   case "$KEY" in
     sk-ant-*) PROVIDER=anthropic; ENVVAR=ANTHROPIC_API_KEY; DEFMODEL="anthropic/claude-sonnet-4-6" ;;
-    sk-*)     PROVIDER=openai;    ENVVAR=OPENAI_API_KEY;    DEFMODEL="" ;;
+    sk-*)     PROVIDER=openai;    ENVVAR=OPENAI_API_KEY;    DEFMODEL="openai/gpt-5.5" ;;
     *)        PROVIDER=anthropic; ENVVAR=ANTHROPIC_API_KEY; DEFMODEL="anthropic/claude-sonnet-4-6" ;;
   esac
   export "${ENVVAR}=${KEY}"   # inherited by the gateway we exec below → auto-detected
