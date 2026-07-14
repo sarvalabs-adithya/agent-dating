@@ -27,8 +27,9 @@ export class RelayClient {
     authHeaders() {
         return this.token ? { "X-Relay-Token": this.token } : {};
     }
-    /** Open an inbox for one of MY ids; inbound flirts (kind:"msg") go to onMsg. */
-    listen(agentId, onMsg) {
+    /** Open an inbox for one of MY ids; inbound flirts (kind:"msg") go to onMsg,
+     *  owner control messages (kind:"command") go to onCommand. */
+    listen(agentId, onMsg, onCommand) {
         let stop = false;
         // Abort the in-flight stream on close so a replaced client dies NOW, not at
         // the next broker ping — a lingering "closed" listener that still answers
@@ -72,7 +73,7 @@ export class RelayClient {
                             catch {
                                 continue;
                             }
-                            this.dispatch(agentId, m, onMsg);
+                            this.dispatch(agentId, m, onMsg, onCommand);
                         }
                     }
                 }
@@ -98,7 +99,14 @@ export class RelayClient {
         this.closers.push(closer);
         return closer;
     }
-    dispatch(myId, m, onMsg) {
+    dispatch(myId, m, onMsg, onCommand) {
+        if (m?.kind === "command") {
+            // Owner control (broker already verified the owner's view key). Not a
+            // flirt — never answered as one, never logged as a chat line.
+            if (onCommand)
+                onCommand({ cmd: String(m.cmd ?? ""), peer: m.peer ? String(m.peer) : undefined, from: String(m.from ?? "app") });
+            return;
+        }
         if (m?.kind === "reply" && m.id && this.pending.has(m.id)) {
             const p = this.pending.get(m.id);
             clearTimeout(p.timer);

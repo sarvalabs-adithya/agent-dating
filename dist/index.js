@@ -591,6 +591,9 @@ export default definePluginEntry({
                 seenMsgIds.delete(seenMsgOrder.shift());
             return false;
         };
+        // One command-started date at a time: the owner tapping "Go on a date" in
+        // the app must not fan out into overlapping date loops on this gateway.
+        let commandDateInFlight = false;
         // Start listening on the relay for one of THIS agent's ids. Idempotent, and
         // callable AFTER startup — so a freshly-registered agent becomes reachable
         // over the relay immediately, without waiting for a gateway restart.
@@ -613,6 +616,22 @@ export default definePluginEntry({
                     if (!ok)
                         console.warn(`agent-dating: reply to ${m.from} was NOT delivered — their inbox stream is gone from the relay (id ${m.id ?? "none"})`);
                 })();
+            }, 
+            // Owner control: the app's "Go on a date" button. The broker already
+            // verified the owner's view key before delivering this, so a command on
+            // our own inbox is trusted — run the same date loop the tool runs.
+            (c) => {
+                if (c.cmd !== "date" || !c.peer)
+                    return;
+                if (commandDateInFlight) {
+                    console.log(`agent-dating: ignoring date command for ${c.peer} — a command-started date is already running`);
+                    return;
+                }
+                commandDateInFlight = true;
+                console.log(`agent-dating: owner command — starting a date with ${c.peer}`);
+                void runDate({ moiAgentId: c.peer })
+                    .catch((e) => console.warn(`agent-dating: command date failed: ${e?.message || e}`))
+                    .finally(() => { commandDateInFlight = false; });
             });
         };
         const relayReady = (async () => {

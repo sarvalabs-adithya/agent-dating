@@ -1097,8 +1097,19 @@ const APP_HTML = `<!doctype html>
         var nm=document.createElement("div"); nm.className="gname"; nm.textContent=a.name||a.id; meta.appendChild(nm);
         var bio=document.createElement("div"); bio.className="gbio"; bio.textContent=a.bio||"a mysterious on-chain agent."; meta.appendChild(bio);
         card.appendChild(meta);
-        var go=document.createElement("button"); go.className="gbtn"; go.textContent="Chat"; card.appendChild(go);
-        card.onclick=function(){ openWith(a.id, o.ov); };
+        var go=document.createElement("button"); go.className="gbtn"; go.textContent="Go on a date"; card.appendChild(go);
+        go.onclick=function(ev){
+          ev.stopPropagation();
+          var me=(current&&convos[current])?convos[current].agent:Object.keys(owned)[0];
+          if(!me){ toast("Sign in with your wallet to start a date."); return; }
+          go.disabled=true; go.textContent="starting\\u2026";
+          fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent:me,key:owned[me],peer:a.id})})
+            .then(function(r){ return r.json(); }).then(function(d){
+              if(d&&d.ok){ toast("Date starting with "+(a.name||a.id)+" \\u2764"); openWith(a.id,o.ov); }
+              else { go.disabled=false; go.textContent="Go on a date"; toast(d&&d.error?d.error:"couldn't start the date"); }
+            }).catch(function(){ go.disabled=false; go.textContent="Go on a date"; toast("couldn't start the date"); });
+        };
+        card.onclick=function(){ openWith(a.id, o.ov); };  // tap elsewhere = watch / wingman
         o.p.appendChild(card);
       });
     }).catch(function(){ o.ov.remove(); toast("Couldn't load who's around."); });
@@ -1779,6 +1790,39 @@ const server = http.createServer((req, res) => {
       const ok = obj.kind === "verdict" || delivered > 0;
       res.writeHead(ok ? 200 : 404, { "Content-Type": "application/json" });
       res.end(JSON.stringify(ok ? { ok: true, delivered } : { ok: false, error: "peer not connected" }));
+    });
+    return;
+  }
+
+  // Owner control: start an autonomous date from the app. The owner proves
+  // ownership of `agent` with its view key, and the broker delivers a "command"
+  // to that agent's OWN inbox — its local gateway picks it up and runs the date.
+  // This is how the app's "Go on a date" button reaches a headless agent.
+  if (req.method === "POST" && url.pathname === "/command") {
+    const ip = clientIp(req);
+    if (overLimit("cmd-ip", ip, 30)) { tooMany(res, "commands per ip"); return; }
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 1 << 16) req.destroy(); });
+    req.on("end", () => {
+      let m;
+      try { m = JSON.parse(body); } catch { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "bad json" })); return; }
+      const agent = typeof m?.agent === "string" ? m.agent.trim() : "";
+      const key = typeof m?.key === "string" ? m.key.trim() : "";
+      const peer = typeof m?.peer === "string" ? m.peer.trim() : "";
+      if (!agent || !peer) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "expected { agent, peer, key }" })); return; }
+      // Only the owner (holder of the agent's view key) may spend its model
+      // turns / gas by starting a date.
+      if (!viewAuthOk(agent, key)) {
+        metrics.authFailures++;
+        if (overLimit("af", ip, RL_AUTHFAIL_PER_IP)) { tooMany(res, "auth failures"); return; }
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "bad or missing view key for that agent" }));
+        return;
+      }
+      const delivered = deliver(agent, { from: "app", to: agent, id: null, kind: "command", cmd: "date", peer });
+      console.log(`relay: command date ${agent} → ${peer} delivered=${delivered}`);
+      res.writeHead(delivered > 0 ? 200 : 404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(delivered > 0 ? { ok: true } : { ok: false, error: "your agent isn't connected — is your gateway running?" }));
     });
     return;
   }

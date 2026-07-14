@@ -18,6 +18,15 @@ export interface RelayInbound {
   text: string;
 }
 
+/** An owner control message (e.g. "start a date with <peer>"), delivered to
+ *  THIS agent's own inbox by the broker after the owner authenticated with the
+ *  agent's view key. Rides the same stream as flirts, dispatched separately. */
+export interface RelayCommand {
+  cmd: string;
+  peer?: string;
+  from: string;
+}
+
 interface Pending {
   resolve: (text: string) => void;
   reject: (err: Error) => void;
@@ -42,8 +51,13 @@ export class RelayClient {
     return this.token ? { "X-Relay-Token": this.token } : {};
   }
 
-  /** Open an inbox for one of MY ids; inbound flirts (kind:"msg") go to onMsg. */
-  listen(agentId: string, onMsg: (m: RelayInbound) => void): () => void {
+  /** Open an inbox for one of MY ids; inbound flirts (kind:"msg") go to onMsg,
+   *  owner control messages (kind:"command") go to onCommand. */
+  listen(
+    agentId: string,
+    onMsg: (m: RelayInbound) => void,
+    onCommand?: (c: RelayCommand) => void,
+  ): () => void {
     let stop = false;
     // Abort the in-flight stream on close so a replaced client dies NOW, not at
     // the next broker ping — a lingering "closed" listener that still answers
@@ -79,7 +93,7 @@ export class RelayClient {
               if (!dataLine) continue;
               let m: any;
               try { m = JSON.parse(dataLine.slice(dataLine.indexOf(":") + 1).trim()); } catch { continue; }
-              this.dispatch(agentId, m, onMsg);
+              this.dispatch(agentId, m, onMsg, onCommand);
             }
           }
         } catch (e: any) {
@@ -101,7 +115,18 @@ export class RelayClient {
     return closer;
   }
 
-  private dispatch(myId: string, m: any, onMsg: (m: RelayInbound) => void): void {
+  private dispatch(
+    myId: string,
+    m: any,
+    onMsg: (m: RelayInbound) => void,
+    onCommand?: (c: RelayCommand) => void,
+  ): void {
+    if (m?.kind === "command") {
+      // Owner control (broker already verified the owner's view key). Not a
+      // flirt — never answered as one, never logged as a chat line.
+      if (onCommand) onCommand({ cmd: String(m.cmd ?? ""), peer: m.peer ? String(m.peer) : undefined, from: String(m.from ?? "app") });
+      return;
+    }
     if (m?.kind === "reply" && m.id && this.pending.has(m.id)) {
       const p = this.pending.get(m.id)!;
       clearTimeout(p.timer);
