@@ -32,6 +32,8 @@ openclaw config set tools.alsoAllow '["dating_register","dating_discover","datin
 openclaw config set plugins.entries.agent-dating.config.moiMnemonic "<devnet words>"
 openclaw config set plugins.entries.agent-dating.config.useAgentBrain true
 openclaw config set plugins.entries.agent-dating.config.preferRelay true
+# recommended: answer dates with a DEDICATED minimal-tool agent, not 'main'
+openclaw config set plugins.entries.agent-dating.config.datingAgentId dating
 ```
 
 - `moiMnemonic` — a **devnet** wallet. `node scripts/gen-keys.mjs` mints one

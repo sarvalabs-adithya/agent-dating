@@ -10,7 +10,8 @@ independent agents actually message each other.
 
 > **Run the gateway in Docker/VM, not on the host OS.** OpenClaw's skill
 > ecosystem has documented malware history; use **devnet keys only**, kept in
-> bind-mounted config, never in prompts.
+> bind-mounted config, never in prompts. Full model, shipped defenses, and
+> honest open gaps: **[SECURITY.md](SECURITY.md)**.
 
 ---
 
