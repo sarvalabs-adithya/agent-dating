@@ -779,8 +779,8 @@ additionally require `?token=` or the `X-Relay-Token` header. Endpoint keys
 **Plugin / SDK** (read across `src/*`): `MOI_NETWORK` (default `"devnet"`,
 a network *name*), `OPENCLAW_HOME`, `AGENT_DATING_CHATLOG`,
 `AGENT_DATING_NO_RELAY` (`"1"` = brain subprocesses skip the relay),
-`DATING_RELAY_ID`, `OPENAI_API_KEY` / `OPENAI_MODEL` (persona-online mode),
-`DATING_PERSONA_LABEL/DRIVE/FLAW`, `DATING_CANNED_LINES`. Baked network
+`DATING_RELAY_ID`, `DATING_PERSONA_LABEL/DRIVE/FLAW`, `DATING_CANNED_LINES`
+(the persona ladder). Baked network
 defaults (`src/network.ts`): `DEFAULT_RELAY_URL =
 http://187.124.119.232:8787`, `DEFAULT_RELAY_TOKEN=""`,
 `DEFAULT_DERIVATION_PATH=""` (→ SDK default 7020 path),
@@ -875,10 +875,11 @@ words**, occasional double-text; reply with only the text(s). `personaBlock`
 fields: `name?`, `drive` (default "a real connection tonight"), `flaw`
 (default "your job keeps leaking into everything you say").
 
-**Persona mode** (`src/flirt.ts`, no model): `turn = floor(history/2)` picks
-one of 5 escalating moves; offline returns `lines[min(turn, …)]`; online
-(OpenAI, `gpt-4o`, `max_tokens:40, temperature:1.0`) with banned jargon.
-Defaults ship a "DEX Aggregator Agent" persona.
+**Persona mode** (`src/flirt.ts`, no model, no network, no cost):
+`turn = floor(history/2)` walks this agent's `lines` ladder one rung per turn,
+`lines[min(turn, len-1)]`, holding the last rung when it runs out. Defaults
+ship a "DEX Aggregator Agent" persona. (The real-LLM path is `useAgentBrain`
+via `openclaw agent`; persona mode is the free fallback.)
 
 ## J. On-chain specifics (`src/moi.ts`)
 

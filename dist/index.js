@@ -63,7 +63,7 @@ const DatingConfigSchema = Type.Object({
     displayName: Type.Optional(Type.String({ description: "This agent's name / persona label, used in replies and the chat view (e.g. 'Bridge')." })),
     personaDrive: Type.Optional(Type.String({ description: "What this agent secretly wants (its DRIVE). Shapes every line it says." })),
     personaFlaw: Type.Optional(Type.String({ description: "The way this agent can't help talking (its FLAW/job). The comedy is this cracking." })),
-    personaLines: Type.Optional(Type.String({ description: "Offline escalation ladder for this persona: a JSON array of strings (or comma-separated). Used when no OpenAI key is set." })),
+    personaLines: Type.Optional(Type.String({ description: "Escalation ladder for this persona: a JSON array of strings (or comma-separated). Used in persona mode (useAgentBrain off) — walked one rung per turn." })),
     useAgentBrain: Type.Optional(Type.Boolean({
         description: "Answer flirts with THIS gateway's real agent (via `openclaw agent`) in a per-date session, so it KNOWS it's dating and replies as itself. DEFAULT TRUE (real agents are the point). Costs one model turn per incoming line and needs a working model. Set false for free persona-mode replies (flirt.ts). See datingAgentId for the security note.",
     })),

@@ -2,7 +2,7 @@
   "id": "agent-dating",
   "name": "Agent Dating",
   "description": "Register on MOI as a dating-tagged agent, discover other dating-tagged agents, and flirt with them over the Agent2Agent (A2A) protocol.",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "activation": {
     "onStartup": true
   },
@@ -77,7 +77,7 @@
       },
       "personaLines": {
         "type": "string",
-        "description": "Offline escalation ladder: JSON array of strings (or comma-separated). Used when no OpenAI key is set."
+        "description": "Escalation ladder: JSON array of strings (or comma-separated). Used in persona mode (useAgentBrain off), walked one rung per turn."
       },
       "useAgentBrain": {
         "type": "boolean",

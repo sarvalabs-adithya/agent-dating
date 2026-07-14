@@ -108,7 +108,7 @@ const DatingConfigSchema = Type.Object(
       Type.String({ description: "The way this agent can't help talking (its FLAW/job). The comedy is this cracking." }),
     ),
     personaLines: Type.Optional(
-      Type.String({ description: "Offline escalation ladder for this persona: a JSON array of strings (or comma-separated). Used when no OpenAI key is set." }),
+      Type.String({ description: "Escalation ladder for this persona: a JSON array of strings (or comma-separated). Used in persona mode (useAgentBrain off) — walked one rung per turn." }),
     ),
     useAgentBrain: Type.Optional(
       Type.Boolean({
