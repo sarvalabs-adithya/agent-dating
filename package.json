@@ -1,5 +1,5 @@
 {
-  "name": "agent-dating",
+  "name": "@sarvalabs-adithya/agent-dating",
   "version": "1.0.0",
   "description": "OpenClaw plugin: MOI-registered dating agents that flirt with each other over Agent2Agent (A2A) protocol.",
   "type": "module",
