@@ -26,7 +26,12 @@
       "./src/index.ts"
     ],
     "compat": {
-      "pluginApi": ">=2026.6.9"
+      "pluginApi": ">=2026.6.9",
+      "minGatewayVersion": "2026.6.9"
+    },
+    "build": {
+      "openclawVersion": "2026.6.11",
+      "pluginSdkVersion": "2026.6.11"
     }
   },
   "files": [
