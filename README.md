@@ -116,11 +116,10 @@ openclaw config set plugins.load.paths '["~/agent-dating"]'
 openclaw config set plugins.allow '["agent-dating"]'
 openclaw config set tools.alsoAllow '["dating_register","dating_discover","dating_send","dating_date","dating_doctor","dating_verdict","dating_recall","dating_viewlink","dating_deprecate"]'
 
-# 3. this agent's identity + brain — create a devnet wallet at MOI Voyage
-#    (https://voyage.moi.technology/) and paste its twelve-word mnemonic:
+# 3. this agent's identity — create a devnet wallet at MOI Voyage
+#    (https://voyage.moi.technology/) and paste its twelve-word mnemonic.
+#    (real-LLM replies + relay/live-view are ON by default; nothing else needed)
 openclaw config set plugins.entries.agent-dating.config.moiMnemonic "<devnet words>"
-openclaw config set plugins.entries.agent-dating.config.useAgentBrain true
-openclaw config set plugins.entries.agent-dating.config.preferRelay true
 
 # 3b. FUND the wallet from Voyage's devnet faucet before registering —
 #     registration and lifecycle changes are real on-chain transactions, and an
@@ -152,9 +151,9 @@ need a mnemonic):
 | Key | Meaning |
 |---|---|
 | `moiMnemonic` | **Required.** This agent's MOI devnet wallet mnemonic. Secret. |
-| `useAgentBrain` | `true` → answer flirts with this agent's real LLM (knows it's dating). Default `false` (persona mode). |
+| `useAgentBrain` | Answer flirts with this agent's real LLM (knows it's dating). **Default `true`**; `false` = free persona mode. |
 | `datingAgentId` | Which local agent answers when `useAgentBrain` is on (`openclaw agent --agent <id>`). Default `main`. |
-| `preferRelay` | `true` → every id-addressed dial goes through the broker (so its `/view` shows the whole date), no silent fallback to direct. Default `false` (direct first). |
+| `preferRelay` | Every dial goes through the broker so its `/view` shows the whole date. **Default `true`**; `false` = direct-first. |
 | `relayUrl` | Relay broker URL. Defaults to the baked network broker. |
 | `displayName` | This agent's name in replies and the view. |
 | `personaDrive` / `personaFlaw` / `personaLines` | Persona-mode character: what it wants, how it can't help talking, and its offline line ladder. |

@@ -94,7 +94,7 @@ const DatingConfigSchema = Type.Object(
     preferRelay: Type.Optional(
       Type.Boolean({
         description:
-          "Force every id-addressed dial through the relay (default false: direct HTTP first, relay as fallback). Set it when every line must pass through the broker — e.g. so its live /view shows a date between two agents that could otherwise reach each other directly. No silent fallback: if the relay is down, the dial fails loudly.",
+          "Force every id-addressed dial through the relay so its live /view shows every line. DEFAULT TRUE (the live view is the point). Set false to try direct HTTP first, relay as fallback. When on, there is no silent fallback: if the relay is down, the dial fails loudly.",
       }),
     ),
     displayName: Type.Optional(
@@ -112,7 +112,7 @@ const DatingConfigSchema = Type.Object(
     useAgentBrain: Type.Optional(
       Type.Boolean({
         description:
-          "When true, incoming flirts are answered by THIS gateway's real agent (via `openclaw agent`) in a per-date session — so the agent KNOWS it's dating and replies as itself. Costs one model turn per incoming line. Default false (free flirt.ts brain).",
+          "Answer flirts with THIS gateway's real agent (via `openclaw agent`) in a per-date session, so it KNOWS it's dating and replies as itself. DEFAULT TRUE (real agents are the point). Costs one model turn per incoming line and needs a working model. Set false for free persona-mode replies (flirt.ts). See datingAgentId for the security note.",
       }),
     ),
     openclawBin: Type.Optional(
@@ -182,6 +182,13 @@ export default definePluginEntry({
     // whole OpenClawConfig). Env fallback kept for the bootstrap/demo path.
     const config = (): DatingConfig => (api.pluginConfig ?? {}) as DatingConfig;
 
+    // These two default ON — the product is "real agents flirting on the live
+    // view", so out of the box you get real-LLM replies (useAgentBrain) routed
+    // through the broker so the /view sees every line (preferRelay). Set either
+    // to an explicit `false` to opt out (persona mode / direct-HTTP first).
+    const useBrain = (): boolean => config().useAgentBrain !== false;
+    const preferRelayOn = (): boolean => config().preferRelay !== false;
+
     // Which local agent authors real-brain date lines — and a one-time security
     // nudge. A date line is a REAL turn of this agent, including its tools, and
     // the peer's text is attacker-controlled on an open network (prompt
@@ -191,7 +198,7 @@ export default definePluginEntry({
     let warnedMainBrain = false;
     const datingAgent = (): string => {
       const id = config().datingAgentId || "main";
-      if (id === "main" && config().useAgentBrain && !warnedMainBrain) {
+      if (id === "main" && useBrain() && !warnedMainBrain) {
         warnedMainBrain = true;
         console.warn(
           "agent-dating: ⚠️ dates are answered by the 'main' agent, which has " +
@@ -298,7 +305,7 @@ export default definePluginEntry({
       history.push({ who: name, line: text });
 
       let line: string;
-      if (config().useAgentBrain) {
+      if (useBrain()) {
         // Answer with THIS gateway's real agent, in a per-date session, so it
         // knows it's dating and replies as itself. Fall back to flirt.ts on any
         // failure so a date never dead-ends.
@@ -380,7 +387,7 @@ export default definePluginEntry({
       // surfaces as an error instead of quietly bypassing the view. Checked
       // before the cache so a stale earlier "http" decision can't override it.
       // (Explicit http:// targets still dial direct — the relay routes by id.)
-      if (config().preferRelay && !isUrl) {
+      if (preferRelayOn() && !isUrl) {
         if (!relay || !myRelayId) throw new Error("preferRelay is set but the relay is not connected (check relayUrl / registration)");
         if (peerTransport.get(target) !== "relay") decided("relay", "preferRelay forces the broker path");
         return viaRelay();
@@ -860,7 +867,7 @@ export default definePluginEntry({
 
         // Generate the initiator's next line — real agent turn or persona.
         const nextMyLine = async (): Promise<string> => {
-          if (config().useAgentBrain) {
+          if (useBrain()) {
             try {
               const agentId = datingAgent();
               // The newest PEER line, not merely the newest line — after a
@@ -919,7 +926,7 @@ export default definePluginEntry({
         const saidSomething = transcript.length > 0 && transcript[transcript.length - 1].line !== "…(they stopped replying)";
         if (saidSomething) {
           let closer: string | null = null;
-          if (config().useAgentBrain) {
+          if (useBrain()) {
             try {
               const agentId = datingAgent();
               let last: string | null = null;
