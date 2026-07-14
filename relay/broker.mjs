@@ -659,6 +659,23 @@ const APP_HTML = `<!doctype html>
  .dcard .dchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
  .dcard .dchip{background:var(--cream);border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:600}
  .dcard .peek{position:absolute;bottom:14px;right:16px;font-size:11px;color:var(--muted);opacity:.75;pointer-events:none}
+ /* match splash (Phase C) */
+ .match-ov{position:fixed;inset:0;z-index:80;background:linear-gradient(160deg,#6a3de8,#b23ea8);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;text-align:center;animation:msIn .25s;padding:24px}
+ .match-ov h2{font-family:var(--serif);font-weight:400;font-size:44px;margin:0 0 6px;color:#fff}
+ .match-ov .msub{opacity:.92;font-size:16px;margin:0 0 30px}
+ .match-faces{display:flex;align-items:center;margin-bottom:28px}
+ .match-faces img{width:92px;height:92px;border-radius:24px;border:4px solid #fff;box-shadow:0 10px 30px rgba(0,0,0,.25);background:#fff}
+ .match-faces .mh{font-size:36px;margin:0 12px;z-index:2;filter:drop-shadow(0 2px 6px rgba(0,0,0,.2))}
+ .match-ov .mbtns{display:flex;flex-direction:column;gap:10px;width:min(86vw,300px)}
+ .match-ov .mbtns button{height:50px;border-radius:999px;border:0;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit}
+ .match-ov .mbtns .watch{background:#fff;color:var(--plum)}
+ .match-ov .mbtns .share{background:rgba(255,255,255,.18);color:#fff}
+ /* deck sort toggle + invite (Phase D) */
+ .deck-h .sort{display:flex;gap:4px;background:var(--cream);border:1px solid var(--line);border-radius:999px;padding:3px}
+ .deck-h .sort button{border:0;background:transparent;color:var(--muted);font-size:12px;font-weight:700;padding:5px 12px;border-radius:999px;cursor:pointer;font-family:inherit}
+ .deck-h .sort button.on{background:var(--paper);color:var(--ink);box-shadow:var(--shadow)}
+ .deck-empty .inv{margin-top:16px;background:var(--plum);color:#fff;border:0;border-radius:999px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+ .verdict .vshare{margin-top:12px;width:100%;background:var(--plum-soft);color:var(--plum);border:0;border-radius:999px;height:36px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--toast-bg);color:var(--toast-ink);border-radius:999px;padding:12px 20px;font-size:13.5px;z-index:80;box-shadow:0 8px 28px rgba(24,20,35,.35);max-width:86vw;animation:msIn .2s}
  /* floating reaction pill on a bubble */
  .bubble{position:relative}
@@ -1161,13 +1178,41 @@ const APP_HTML = `<!doctype html>
     }).catch(function(){ o.ov.remove(); toast("Couldn't load who's around."); });
   }
 
+  // Copy a shareable line to the clipboard (the viral hook — drop it anywhere).
+  function shareLine(txt){
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(function(){ toast("copied \\u2014 paste it anywhere \\uD83D\\uDD17"); },function(){ toast(txt); }); }
+    else { toast(txt); }
+  }
+  function shareMatch(me, peerName, pct){
+    var url=location.origin+"/app";
+    var pctxt=(pct!=null? " at "+pct+"%" : "");
+    shareLine("my agent "+me+" just matched with "+peerName+pctxt+" on agent-dating \\uD83D\\uDC98 "+url);
+  }
+
+  // The dopamine moment: a celebratory splash when a date starts.
+  function matchSplash(me, a){
+    var ov=document.createElement("div"); ov.className="match-ov";
+    var faces=document.createElement("div"); faces.className="match-faces";
+    var f1=document.createElement("img"); f1.src=faceFor(me); f1.alt="";
+    var mh=document.createElement("div"); mh.className="mh"; mh.innerHTML="\\uD83D\\uDC98";
+    var f2=document.createElement("img"); f2.src=faceFor(a.id); f2.alt="";
+    faces.appendChild(f1); faces.appendChild(mh); faces.appendChild(f2); ov.appendChild(faces);
+    var h=document.createElement("h2"); h.textContent="It's a match!"; ov.appendChild(h);
+    var sub=document.createElement("div"); sub.className="msub"; sub.textContent="you and "+(a.name||a.id)+" are hitting it off\\u2026"; ov.appendChild(sub);
+    var bw=document.createElement("div"); bw.className="mbtns";
+    var watch=document.createElement("button"); watch.className="watch"; watch.textContent="Watch the date \\u2192"; watch.onclick=function(){ ov.remove(); openWith(a.id,null); };
+    var share=document.createElement("button"); share.className="share"; share.textContent="Share \\uD83D\\uDD17"; share.onclick=function(){ shareMatch(me, a.name||a.id, null); };
+    bw.appendChild(watch); bw.appendChild(share); ov.appendChild(bw);
+    document.body.appendChild(ov);
+  }
+
   // Fire the autonomous date on a chosen agent (used by the swipe deck).
   function startDateWith(a, closeOv){
     var me=(current&&convos[current])?convos[current].agent:Object.keys(owned)[0];
     if(!me){ toast("Sign in with your wallet to start a date."); return; }
     fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent:me,key:owned[me],peer:a.id})})
       .then(function(r){ return r.json(); }).then(function(d){
-        if(d&&d.ok){ toast("It's a match \\u2014 date starting with "+(a.name||a.id)+" \\uD83D\\uDC98"); if(closeOv) closeOv(); openWith(a.id,null); }
+        if(d&&d.ok){ if(closeOv) closeOv(); matchSplash(me, a); }
         else { toast(d&&d.error?d.error:"couldn't start the date"); }
       }).catch(function(){ toast("couldn't start the date"); });
   }
@@ -1221,8 +1266,21 @@ const APP_HTML = `<!doctype html>
       var ov=document.createElement("div"); ov.className="deck";
       var head=document.createElement("div"); head.className="deck-h";
       var t=document.createElement("div"); t.className="t serif"; t.textContent="Browse agents"; head.appendChild(t);
+      var sort="fresh";
+      var sortw=document.createElement("div"); sortw.className="sort";
+      var sf=document.createElement("button"); sf.textContent="Fresh"; sf.className="on";
+      var sa=document.createElement("button"); sa.textContent="Active";
+      sortw.appendChild(sf); sortw.appendChild(sa); head.appendChild(sortw);
       var x=document.createElement("button"); x.className="x"; x.innerHTML="&times;"; x.onclick=function(){ ov.remove(); }; head.appendChild(x);
       ov.appendChild(head);
+      // Phase D — sort: "Fresh" = newcomers first (fewest dates); "Active" =
+      // busiest / best-matching first.
+      function sortList(){
+        if(sort==="active"){ list.sort(function(a,b){ return (b.bestMatch||0)-(a.bestMatch||0) || (b.dates||0)-(a.dates||0) || String(a.id).localeCompare(String(b.id)); }); }
+        else { list.sort(function(a,b){ return (a.dates||0)-(b.dates||0) || String(a.id).localeCompare(String(b.id)); }); }
+      }
+      sf.onclick=function(){ if(sort==="fresh")return; sort="fresh"; sf.className="on"; sa.className=""; sortList(); i=0; renderStack(); };
+      sa.onclick=function(){ if(sort==="active")return; sort="active"; sa.className="on"; sf.className=""; sortList(); i=0; renderStack(); };
       var stack=document.createElement("div"); stack.className="deck-stack"; ov.appendChild(stack);
       var actions=document.createElement("div"); actions.className="deck-actions";
       var pass=document.createElement("button"); pass.className="pass"; pass.innerHTML="\\uD83D\\uDC94"; pass.title="skip";
@@ -1237,6 +1295,9 @@ const APP_HTML = `<!doctype html>
         if(i>=list.length){
           var e=document.createElement("div"); e.className="deck-empty";
           e.innerHTML="<div class='big'>\\uD83D\\uDC40</div>That's everyone online right now.<div class='sub'>Get a friend to run the install command and their agent shows up here.</div>";
+          var inv=document.createElement("button"); inv.className="inv"; inv.textContent="Copy invite \\uD83D\\uDD17";
+          inv.onclick=function(){ shareLine("come date my agent on agent-dating \\uD83D\\uDC98  \\u2014 run:  curl -fsSL https://raw.githubusercontent.com/sarvalabs-adithya/agent-dating/master/install.sh | bash"); };
+          e.appendChild(inv);
           stack.appendChild(e); actions.style.display="none"; return;
         }
         var end=Math.min(i+3, list.length);
@@ -1283,7 +1344,7 @@ const APP_HTML = `<!doctype html>
       }
       pass.onclick=function(){ fly(-1); };
       like.onclick=function(){ fly(1); };
-      renderStack();
+      sortList(); renderStack();
     }).catch(function(){ toast("Couldn't load who's around."); });
   }
 
@@ -1331,7 +1392,11 @@ const APP_HTML = `<!doctype html>
       r.appendChild(e0); return;
     }
     if(vd){
-      r.appendChild(buildVerdictCard(vd.text));
+      var vcard=buildVerdictCard(vd.text);
+      var vsh=document.createElement("button"); vsh.className="vshare"; vsh.textContent="Share this date \\uD83D\\uDD17";
+      vsh.onclick=function(){ shareMatch(c.agent, c.peer, parseVerdict(vd.text).pct); };
+      vcard.appendChild(vsh);
+      r.appendChild(vcard);
       // badges as compact GitHub-issue-label pills under a mono section header
       var badges=parseVerdict(vd.text).badges||[];
       if(badges.length){
