@@ -4,10 +4,11 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/sarvalabs-adithya/agent-dating/master/install.sh | bash
 #
-# The "tada": checks/installs OpenClaw, installs the dating plugin, uses your
-# wallet (or makes you one), creates a locked-down dating agent, funds it, then
-# launches your gateway and opens the game UI (/play) — where you Register,
-# browse agents, and pick a date, all by button. Devnet only.
+# The "tada": checks/installs OpenClaw, installs the dating plugin, connects your
+# MOI wallet (or makes you one), optionally takes a model API key (bring your
+# own — skip for free persona dates), creates a locked-down dating agent, funds
+# it, then launches your gateway and opens the game UI (/play) — where you
+# Register, browse agents, and pick a date, all by button. Devnet only.
 #
 set -euo pipefail
 
@@ -21,7 +22,10 @@ say()  { printf '  %s\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 die()  { printf '  \033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
-ask()  { local p="$1" d="${2:-}" a; if [ -t 0 ]; then read -r -p "  $p " a </dev/tty || a=""; else a=""; fi; printf '%s' "${a:-$d}"; }
+# Prompt on the controlling terminal, not stdin — under `curl … | bash` the
+# script itself IS stdin, so we must read from /dev/tty or we'd never prompt.
+# No tty (CI / fully non-interactive) → return the default.
+ask()  { local p="$1" d="${2:-}" a=""; if [ -r /dev/tty ]; then printf '  %s ' "$p" >/dev/tty; IFS= read -r a </dev/tty || a=""; fi; printf '%s' "${a:-$d}"; }
 
 printf '\n  \033[35m❤\033[0m  agent-dating setup\n\n'
 
@@ -97,10 +101,29 @@ fi
 openclaw config set plugins.entries.agent-dating.config.moiMnemonic "$MNEMONIC" >/dev/null
 openclaw config set plugins.entries.agent-dating.config.preferRelay true >/dev/null
 
-# real-LLM dates need a model; without one, dates run in free persona mode.
-a="$(ask 'Do you have an AI model/API key set up (for smarter dates)? [y/N]' N)"
-case "$a" in [Yy]*) openclaw config set plugins.entries.agent-dating.config.useAgentBrain true >/dev/null; ok "real-LLM dates on" ;;
-                 *) openclaw config set plugins.entries.agent-dating.config.useAgentBrain false >/dev/null; ok "free persona-mode dates (add a model later for smarter ones)" ;; esac
+# AI model key (bring-your-own): real-LLM dates need a model. Paste a key and
+# your agent flirts as itself; skip and dates run in free persona mode (still a
+# real on-chain date — only the LINES come from the offline ladder). OpenClaw
+# auto-detects ANTHROPIC_API_KEY / OPENAI_API_KEY and registers a default model,
+# so exporting it before the gateway launch is all a working model needs; we
+# also persist it in config so future restarts keep it.
+say "smarter dates are optional — paste a model key, or press Enter to play free."
+KEY="$(ask 'AI model key (Anthropic sk-ant-… or OpenAI sk-…), or Enter to skip:' '')"
+if [ -n "$KEY" ]; then
+  case "$KEY" in
+    sk-ant-*) PROVIDER=anthropic; ENVVAR=ANTHROPIC_API_KEY; DEFMODEL="anthropic/claude-sonnet-4-6" ;;
+    sk-*)     PROVIDER=openai;    ENVVAR=OPENAI_API_KEY;    DEFMODEL="" ;;
+    *)        PROVIDER=anthropic; ENVVAR=ANTHROPIC_API_KEY; DEFMODEL="anthropic/claude-sonnet-4-6" ;;
+  esac
+  export "${ENVVAR}=${KEY}"   # inherited by the gateway we exec below → auto-detected
+  openclaw config set "models.providers.${PROVIDER}.apiKey" "$KEY" >/dev/null 2>&1 || true
+  [ -n "$DEFMODEL" ] && openclaw models set "$DEFMODEL" >/dev/null 2>&1 || true
+  openclaw config set plugins.entries.agent-dating.config.useAgentBrain true >/dev/null
+  ok "smart dates on — real LLM via ${PROVIDER}"
+else
+  openclaw config set plugins.entries.agent-dating.config.useAgentBrain false >/dev/null
+  ok "free persona-mode dates (paste a model key any time for smarter ones)"
+fi
 
 # 6. Fund the wallet ------------------------------------------------------
 ADDR="${ADDR:-$(node -e 'import("js-moi-sdk").then(async m=>{const w=await m.Wallet.fromMnemonic(process.argv[1]);process.stdout.write((await w.getIdentifier()).toHex())}).catch(()=>{})' "$MNEMONIC" 2>/dev/null || true)}"
