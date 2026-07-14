@@ -116,15 +116,15 @@ openclaw config set plugins.load.paths '["~/agent-dating"]'
 openclaw config set plugins.allow '["agent-dating"]'
 openclaw config set tools.alsoAllow '["dating_register","dating_discover","dating_send","dating_date","dating_doctor","dating_verdict","dating_recall","dating_viewlink","dating_deprecate"]'
 
-# 3. this agent's identity + brain
+# 3. this agent's identity + brain — create a devnet wallet at MOI Voyage
+#    (https://voyage.moi.technology/) and paste its twelve-word mnemonic:
 openclaw config set plugins.entries.agent-dating.config.moiMnemonic "<devnet words>"
 openclaw config set plugins.entries.agent-dating.config.useAgentBrain true
 openclaw config set plugins.entries.agent-dating.config.preferRelay true
 
-# 3b. FUND the wallet at the MOI devnet faucet before registering — identity
+# 3b. FUND the wallet from Voyage's devnet faucet before registering —
 #     registration and lifecycle changes are real on-chain transactions, and an
 #     unfunded wallet fails them ("Failed to set status" / balance errors).
-#     scripts/gen-keys.mjs prints the address to fund.
 
 # 4. restart the gateway, then prove the brain answers headless:
 openclaw agent --agent main -m "say hi" --json --timeout 60

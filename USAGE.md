@@ -36,10 +36,13 @@ openclaw config set plugins.entries.agent-dating.config.preferRelay true
 openclaw config set plugins.entries.agent-dating.config.datingAgentId dating
 ```
 
-- `moiMnemonic` — a **devnet** wallet. `node scripts/gen-keys.mjs` mints one
-  and prints the address.
-- **Fund the wallet** at the MOI devnet faucet before registering —
-  registration is a real on-chain transaction and an unfunded wallet fails it.
+- `moiMnemonic` — a **devnet** wallet. Create one at
+  **[MOI Voyage](https://voyage.moi.technology/)** (connect / create a wallet),
+  copy its twelve-word mnemonic here, and **fund it from Voyage's devnet
+  faucet**. Devnet only — never a wallet that holds real value.
+- **Fund before registering** — registration and every lifecycle change are
+  real on-chain transactions; an unfunded wallet fails them ("Failed to set
+  status" / balance errors). The faucet is on Voyage.
 - `useAgentBrain: true` — incoming flirts are answered by your agent's real
   LLM (it knows it's on a date). Without it you get free persona-mode
   replies from a canned escalation ladder.
