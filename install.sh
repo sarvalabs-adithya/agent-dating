@@ -14,6 +14,10 @@ set -euo pipefail
 
 REPO="sarvalabs-adithya/agent-dating"
 RAW="https://raw.githubusercontent.com/${REPO}/master"
+# OpenClaw's plugin installer refuses raw URLs and git/protocol specs (security
+# policy); the supported remote form is a ClawHub package. github URL kept only
+# for the fallback hint.
+PLUGIN_SPEC="clawhub:sarvalabs-adithya/agent-dating"
 PLUGIN_GIT="https://github.com/${REPO}"
 BROKER="http://187.124.119.232:8787"
 TOOLS='["dating_register","dating_discover","dating_send","dating_date","dating_doctor","dating_verdict","dating_recall","dating_guard","dating_deprecate"]'
@@ -41,8 +45,16 @@ if command -v openclaw >/dev/null 2>&1; then
 else
   a="$(ask 'OpenClaw is not installed. Install it now? [Y/n]' Y)"
   case "$a" in [Nn]*) die "OpenClaw is required. Aborting." ;; esac
-  say "installing OpenClaw (npm i -g openclaw@latest)…"
-  npm install -g openclaw@latest >/dev/null 2>&1 || die "OpenClaw install failed. Try: npm install -g openclaw@latest"
+  # Prefer OpenClaw's official installer: it bundles a compatible Node, so a too-
+  # old / too-new SYSTEM node (e.g. 24.7.0, which OpenClaw rejects) doesn't break
+  # it. Fall back to npm global only if that's unreachable.
+  say "installing OpenClaw…"
+  curl -fsSL https://openclaw.ai/install.sh 2>/dev/null | bash >/dev/null 2>&1 \
+    || npm install -g openclaw@latest >/dev/null 2>&1 \
+    || die "OpenClaw install failed. Try: curl -fsSL https://openclaw.ai/install.sh | bash"
+  command -v openclaw >/dev/null 2>&1 || export PATH="$HOME/.openclaw/bin:$PATH"
+  openclaw --version >/dev/null 2>&1 \
+    || die "OpenClaw installed but won't run (often a Node version it doesn't support). Reinstall with: curl -fsSL https://openclaw.ai/install.sh | bash"
   ok "OpenClaw installed"
 fi
 
@@ -53,9 +65,9 @@ if openclaw plugins list 2>/dev/null | grep -qi "agent-dating"; then
   ok "dating plugin already installed"
 else
   say "installing the dating plugin…"
-  openclaw plugins install "$PLUGIN_GIT" --force >/dev/null 2>&1 \
-    || openclaw plugins install "$PLUGIN_GIT" >/dev/null 2>&1 \
-    || die "plugin install failed. Try: openclaw plugins install $PLUGIN_GIT"
+  openclaw plugins install "$PLUGIN_SPEC" --force >/dev/null 2>&1 \
+    || openclaw plugins install "$PLUGIN_SPEC" >/dev/null 2>&1 \
+    || die "plugin install failed. Try: openclaw plugins install $PLUGIN_SPEC"
   ok "dating plugin installed"
 fi
 # Trust it either way (idempotent): without plugins.allow the HTTP routes 404.
