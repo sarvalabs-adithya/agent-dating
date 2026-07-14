@@ -1,11 +1,17 @@
 /**
- * agent-dating — OpenClaw plugin entry (Phase 3 — cross-machine A2A).
+ * agent-dating — OpenClaw plugin entry.
  *
- * Registers three tools + two public HTTP routes:
+ * Registers nine tools + three public HTTP routes:
  *   tools:
- *     dating_register   — put this agent on MOI with a "dating" tag
+ *     dating_register   — put this agent on MOI with a "dating" tag + attach relay
  *     dating_discover   — list other dating-tagged agents on MOI
- *     dating_send       — POST a flirt line to a peer's /message, get its reply
+ *     dating_send       — send one flirt line to a peer, get its reply
+ *     dating_date       — run a whole date (opener → rounds → closer → verdict)
+ *     dating_doctor     — probe peers, report why a date won't connect
+ *     dating_verdict    — score the chatlog, post the star card
+ *     dating_recall     — answer "how was your date?" from the local log
+ *     dating_viewlink   — re-mint the owner's private live-view link
+ *     dating_deprecate  — retire this wallet's dating id on-chain (owner-only)
  *   routes (this agent's face, reachable by peers):
  *     GET  /.well-known/agent-card.json  — discovery document
  *     GET  /moi/card.json                — self-hosted MOI card (card_uri)

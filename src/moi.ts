@@ -4,7 +4,7 @@
  * VERIFIED against the real packages (inspected type defs + README):
  *   js-moi-agent-registry@0.1.1, js-moi-sdk@0.7.0-rc15 (js-moi-wallet /
  *   js-moi-providers / js-moi-signer / js-moi-identifiers). The API shapes
- *   below match those .d.ts files exactly — see the review notes in TONIGHT.md.
+ *   below match those .d.ts files exactly.
  *
  * The registry stores a LEAN on-chain profile (url, card_uri, status, owner);
  * the dating skill tag lives OFF-CHAIN in the agent card at card_uri. So
