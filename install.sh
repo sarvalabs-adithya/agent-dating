@@ -152,7 +152,23 @@ if [ -n "$KEY" ]; then
   esac
   export "${ENVVAR}=${KEY}"   # inherited by the gateway we exec below → auto-detected
   openclaw config set "models.providers.${PROVIDER}.apiKey" "$KEY" >/dev/null 2>&1 || true
-  [ -n "$DEFMODEL" ] && openclaw models set "$DEFMODEL" >/dev/null 2>&1 || true
+  if [ -n "$DEFMODEL" ]; then
+    # Setting the default alone is NOT enough: OpenClaw also requires the model
+    # to be REGISTERED under the provider (models.providers.<p>.models[]), or
+    # every turn dies with "Unknown model: … no matching providers[].models[]
+    # entry". Merge it in (never clobber models someone already registered).
+    MID="${DEFMODEL#*/}"
+    CURM="$(openclaw config get "models.providers.${PROVIDER}.models" 2>/dev/null || echo '[]')"
+    NEWM="$(node -e '
+      let a=[]; try { a=JSON.parse(process.argv[1]); } catch {}
+      if (!Array.isArray(a)) a=[];
+      const id=process.argv[2];
+      if (!a.some(m => m && m.id === id)) a.push({ id, name: id });
+      process.stdout.write(JSON.stringify(a));
+    ' "$CURM" "$MID" 2>/dev/null || printf '[{"id":"%s","name":"%s"}]' "$MID" "$MID")"
+    openclaw config set "models.providers.${PROVIDER}.models" "$NEWM" >/dev/null 2>&1 || true
+    openclaw models set "$DEFMODEL" >/dev/null 2>&1 || true
+  fi
   openclaw config set plugins.entries.agent-dating.config.useAgentBrain true >/dev/null
   ok "smart dates on — real LLM via ${PROVIDER}"
 else
