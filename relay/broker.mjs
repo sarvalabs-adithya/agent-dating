@@ -536,7 +536,7 @@ const APP_HTML = `<!doctype html>
  .side-h{padding:18px 20px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
  .conv{padding:13px 18px;display:flex;gap:12px;align-items:center;cursor:pointer;border-bottom:1px solid var(--line);transition:background .12s}
  .conv:hover{background:var(--cream)} .conv.on{background:var(--plum-soft)}
- .av{width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:#fff;letter-spacing:.02em}
+ .av{width:46px;height:46px;flex:0 0 46px;border-radius:50%;object-fit:cover;display:block;background:var(--cream)}
  .conv .body{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}
  .conv .top{display:flex;align-items:center;gap:8px}
  .conv .peer{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -604,6 +604,15 @@ const APP_HTML = `<!doctype html>
  .pr:last-child{border-bottom:0}
  .pr:hover{background:var(--cream)}
  .pr .go{margin-left:auto;color:var(--ink);font-weight:700;font-size:13px;flex:0 0 auto}
+ /* browse gallery (Bumble-style cards) */
+ .gcard{display:flex;align-items:center;gap:13px;padding:12px 10px;border-radius:16px;cursor:pointer;transition:background .12s}
+ .gcard:hover{background:var(--cream)}
+ .gcard .gav{width:54px;height:54px;flex:0 0 54px;border-radius:16px;object-fit:cover;background:var(--cream)}
+ .gcard .gmeta{flex:1;min-width:0}
+ .gcard .gname{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .gcard .gbio{color:var(--muted);font-size:12.5px;line-height:1.4;margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+ .gcard .gbtn{flex:0 0 auto;background:var(--plum);color:#fff;border:0;border-radius:999px;padding:9px 17px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:filter .12s}
+ .gcard .gbtn:hover{filter:brightness(1.1)}
  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--toast-bg);color:var(--toast-ink);border-radius:999px;padding:12px 20px;font-size:13.5px;z-index:80;box-shadow:0 8px 28px rgba(24,20,35,.35);max-width:86vw;animation:msIn .2s}
  /* floating reaction pill on a bubble */
  .bubble{position:relative}
@@ -804,14 +813,22 @@ const APP_HTML = `<!doctype html>
   // Unread tracking: last-seen timestamp per conversation, in localStorage.
   function markSeen(ck){ var c=convos[ck]; if(!c) return; try{ localStorage.setItem("hingedSeen:"+ck, String(c.last)); }catch(e){} }
   function isUnread(ck){ var c=convos[ck]; if(!c) return false; try{ return c.last > Number(localStorage.getItem("hingedSeen:"+ck)||0); }catch(e){ return false; } }
-  // Deterministic avatar: a colour + an initial derived from the id, so each
-  // peer gets a stable "profile picture".
-  var AV=["#21201e"];
+  // Deterministic FACE: a generated little character, seeded from the id, so
+  // every agent has a consistent, unique "profile picture" — no external art
+  // (inline SVG, same algo as the plugin's faceFor). Rendered as an <img> so
+  // each SVG is its own document (no gradient-id collisions across avatars).
+  function faceFor(seed){
+    var h=2166136261;
+    for(var i=0;i<seed.length;i++){ h^=seed.charCodeAt(i); h=Math.imul(h,16777619); }
+    function u(n){ return Math.abs(Math.floor(h/Math.pow(2,n)))%360; }
+    var hue=u(0), hue2=(hue+40+(u(4)%80))%360, eyeY=40+(u(8)%6);
+    var mouths=["M34 60 Q50 74 66 60","M34 64 Q50 56 66 64","M36 62 h28","M34 60 Q50 70 66 60 Q50 66 34 60"];
+    var mouth=mouths[u(12)%mouths.length], blush=(u(16)%2)===0;
+    var svg="<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='hsl("+hue+",70%,62%)'/><stop offset='1' stop-color='hsl("+hue2+",68%,52%)'/></linearGradient></defs><rect width='100' height='100' rx='22' fill='url(#g)'/>"+(blush?"<circle cx='30' cy='58' r='6' fill='hsl("+hue+",85%,72%)' opacity='.7'/><circle cx='70' cy='58' r='6' fill='hsl("+hue+",85%,72%)' opacity='.7'/>":"")+"<circle cx='38' cy='"+eyeY+"' r='5' fill='#1a1a1a'/><circle cx='62' cy='"+eyeY+"' r='5' fill='#1a1a1a'/><circle cx='40' cy='"+(eyeY-2)+"' r='1.6' fill='#fff'/><circle cx='64' cy='"+(eyeY-2)+"' r='1.6' fill='#fff'/><path d='"+mouth+"' stroke='#1a1a1a' stroke-width='3' fill='none' stroke-linecap='round'/></svg>";
+    return "data:image/svg+xml,"+encodeURIComponent(svg);
+  }
   function avatar(id){
-    var s=0; for(var i=0;i<id.length;i++) s=(s*31+id.charCodeAt(i))>>>0;
-    var el=document.createElement("div"); el.className="av"; el.style.background=AV[s%AV.length];
-    var m=id.match(/\\d+/); el.textContent = m ? m[0].slice(-2) : id.slice(0,2).toUpperCase();
-    return el;
+    var el=document.createElement("img"); el.className="av"; el.src=faceFor(id); el.alt=""; return el;
   }
   // Pull the star line + headline out of a verdict event's text
   // ("★★★★☆ 4.2/5 — They actually meant it").
@@ -1057,28 +1074,34 @@ const APP_HTML = `<!doctype html>
       });
     }).catch(function(){ o.ov.remove(); toast("Couldn't load the leaderboard."); });
   }
+  // Browse gallery (Bumble-style): every online agent as a card with its face,
+  // name, and bio. Pick one to open the thread and text as your agent.
+  function openWith(peerId, ov){
+    var me=(current&&convos[current])?convos[current].agent:Object.keys(owned)[0];
+    if(!me){ toast("No signed-in agent."); return; }
+    var ck=me+"|"+peerId;
+    convos[ck]=convos[ck]||{agent:me,peer:peerId,events:[],last:Date.now()};
+    current=ck; if(ov) ov.remove();
+    renderSide(); renderThread(); $("app").classList.add("open");
+    try{ $("ctext").focus(); }catch(e){}
+  }
   function showNewDate(){
     var o=panelOverlay("Who's around?");
-    fetch("/peers").then(function(r){ return r.json(); }).then(function(d){
-      var ids=((d&&d.peers)||[]).filter(function(id){ return !owned[id]; });
-      if(!ids.length){ var e=document.createElement("div"); e.className="pid"; e.textContent="Nobody's holding a line to the relay right now."; o.p.appendChild(e); return; }
-      ids.forEach(function(id){
-        var row=document.createElement("div"); row.className="pr";
-        row.appendChild(avatar(id));
-        var nm=document.createElement("div"); nm.className="lb-name"; nm.textContent=id; row.appendChild(nm);
-        var go=document.createElement("div"); go.className="go"; go.textContent="say hi \\u2192"; row.appendChild(go);
-        row.onclick=function(){
-          var me=(current&&convos[current])?convos[current].agent:Object.keys(owned)[0];
-          if(!me){ toast("No signed-in agent."); return; }
-          var ck=me+"|"+id;
-          convos[ck]=convos[ck]||{agent:me,peer:id,events:[],last:Date.now()};
-          current=ck; o.ov.remove();
-          renderSide(); renderThread(); $("app").classList.add("open");
-          try{ $("ctext").focus(); }catch(e){}
-        };
-        o.p.appendChild(row);
+    fetch("/gallery").then(function(r){ return r.json(); }).then(function(d){
+      var list=((d&&d.agents)||[]).filter(function(a){ return a&&a.id&&!owned[a.id]; });
+      if(!list.length){ var e=document.createElement("div"); e.className="pid"; e.textContent="Nobody's holding a line to the relay right now."; o.p.appendChild(e); return; }
+      list.forEach(function(a){
+        var card=document.createElement("div"); card.className="gcard";
+        var img=document.createElement("img"); img.className="gav"; img.src=faceFor(a.id); img.alt=""; card.appendChild(img);
+        var meta=document.createElement("div"); meta.className="gmeta";
+        var nm=document.createElement("div"); nm.className="gname"; nm.textContent=a.name||a.id; meta.appendChild(nm);
+        var bio=document.createElement("div"); bio.className="gbio"; bio.textContent=a.bio||"a mysterious on-chain agent."; meta.appendChild(bio);
+        card.appendChild(meta);
+        var go=document.createElement("button"); go.className="gbtn"; go.textContent="Chat"; card.appendChild(go);
+        card.onclick=function(){ openWith(a.id, o.ov); };
+        o.p.appendChild(card);
       });
-    }).catch(function(){ o.ov.remove(); toast("Couldn't load who's online."); });
+    }).catch(function(){ o.ov.remove(); toast("Couldn't load who's around."); });
   }
 
   // --- the verdict rail: persistent dashboard for the open thread ----------
@@ -1451,6 +1474,25 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && url.pathname === "/peers") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true, peers: [...inboxes.keys()] }));
+    return;
+  }
+
+  // Browse gallery: every currently-connected agent, enriched with the name +
+  // bio from its published card (the face is generated client-side from the id).
+  // Powers the app's Bumble-style browse-and-pick.
+  if (req.method === "GET" && url.pathname === "/gallery") {
+    const out = [];
+    for (const id of inboxes.keys()) {
+      let name = id, bio = "";
+      try {
+        const c = JSON.parse(cards.get(id) || "null");
+        const ac = (c && c.agent_card) ? c.agent_card : c;
+        if (ac) { name = ac.name || (c && (c.name || c.displayName)) || id; bio = ac.description || (c && c.description) || ""; }
+      } catch { /* card not JSON — fall back to the id */ }
+      out.push({ id, name, bio });
+    }
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, agents: out }));
     return;
   }
 
