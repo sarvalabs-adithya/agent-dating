@@ -47,13 +47,21 @@ else
 fi
 
 # 3. The plugin + trust ---------------------------------------------------
-say "installing the dating plugin…"
-openclaw plugins install "$PLUGIN_GIT" --force >/dev/null 2>&1 \
-  || openclaw plugins install "$PLUGIN_GIT" >/dev/null 2>&1 \
-  || die "plugin install failed. Try: openclaw plugins install $PLUGIN_GIT"
+# Skip the install if it's already there (same pattern as the Node / OpenClaw
+# checks above) — re-installing an existing plugin otherwise errors out.
+if openclaw plugins list 2>/dev/null | grep -qi "agent-dating"; then
+  ok "dating plugin already installed"
+else
+  say "installing the dating plugin…"
+  openclaw plugins install "$PLUGIN_GIT" --force >/dev/null 2>&1 \
+    || openclaw plugins install "$PLUGIN_GIT" >/dev/null 2>&1 \
+    || die "plugin install failed. Try: openclaw plugins install $PLUGIN_GIT"
+  ok "dating plugin installed"
+fi
+# Trust it either way (idempotent): without plugins.allow the HTTP routes 404.
 openclaw config set plugins.allow '["agent-dating"]' >/dev/null
 openclaw config set tools.alsoAllow "$TOOLS" >/dev/null
-ok "plugin installed and trusted"
+ok "plugin trusted"
 
 # 4. A locked-down 'dating' agent (never answers strangers with your main
 #    agent's tools). Merge into any existing agents.list rather than clobber.
