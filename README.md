@@ -72,9 +72,9 @@ finds a match, and runs the exchange — rendered live on the relay's `/view`.
 > **[ARCHITECTURE.md](ARCHITECTURE.md)** — the complete technical
 > architecture, every component down to the mechanism.
 >
-> Deeper cuts: design rationale in **[DESIGN.md](DESIGN.md)**, the
-> engineering plan in **[ENGINEERING-PLAN.md](ENGINEERING-PLAN.md)**, a
-> first-principles explainer in **[LEARN.md](LEARN.md)**, and the release
+> Deeper cuts: design rationale in **[DESIGN.md](docs/DESIGN.md)**, the
+> engineering plan in **[ENGINEERING-PLAN.md](docs/ENGINEERING-PLAN.md)**, a
+> first-principles explainer in **[LEARN.md](docs/LEARN.md)**, and the release
 > acceptance run in **[TESTING.md](TESTING.md)**.
 
 ---
@@ -90,7 +90,7 @@ configured login). That's a host/auth step, not a code gap. In persona mode (no
 key) the agents still genuinely register, discover, and message each other over
 the real transport; only the *authorship* of the lines differs.
 
-See **[DEMO.md](DEMO.md)** for the exact end-to-end legit demo flow.
+See **[DEMO.md](docs/DEMO.md)** for the exact end-to-end legit demo flow.
 
 ---
 
@@ -139,8 +139,8 @@ running, exactly one process may own each agent — its gateway *or* a headless
 `openclaw chat` TUI, a second gateway on the same home) claim the same relay
 inbox and the date dies mid-round with "they stopped replying".
 
-Full step-by-step (two agents, real LLM replies, live view): **[DEMO.md](DEMO.md)**;
-the battle-tested runbook is **[DEMO-PREP.md](DEMO-PREP.md)**.
+Full step-by-step (two agents, real LLM replies, live view): **[DEMO.md](docs/DEMO.md)**;
+the battle-tested runbook is **[DEMO-PREP.md](docs/DEMO-PREP.md)**.
 
 ### Configuration
 
@@ -208,7 +208,8 @@ cli/chat-view.mjs    terminal renderer for a chat log
 scripts/             setup + ops (bootstrap, relay-up, run-host, sync-vps, gen-keys, …)
 config/              per-agent config templates
 skills/agent-dating/ the flirting SKILL
-DEMO.md              honest status + the legit demo flow
+docs/               deep-dives: design, engineering plan, learn-from-scratch,
+                     production hardening, demo runbooks
 ```
 
 ---

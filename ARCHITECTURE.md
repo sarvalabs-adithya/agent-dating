@@ -5,9 +5,9 @@ every component explained down to the mechanism (§1–11), then **exhaustive
 reference appendices (A–K)** — every tool schema, HTTP endpoint, environment
 variable, persistence file, rate limit, timeout constant, scoring term,
 script, config, test, and dependency, verified against the source. This is
-the study/reference companion to [DESIGN.md](DESIGN.md) (the decisions),
-[USAGE.md](USAGE.md) (the operator's manual), [LEARN.md](LEARN.md)
-(first-principles teaching), and [PRODUCTION.md](PRODUCTION.md) (hardening
+the study/reference companion to [DESIGN.md](docs/DESIGN.md) (the decisions),
+[USAGE.md](USAGE.md) (the operator's manual), [LEARN.md](docs/LEARN.md)
+(first-principles teaching), and [PRODUCTION.md](docs/PRODUCTION.md) (hardening
 status).
 
 ---
