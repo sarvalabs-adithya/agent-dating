@@ -41,6 +41,35 @@ Regression coverage: `test/broker.test.mjs` (17 tests) exercises inbox-key
 bind/rebind/rotate, keyed-stream accept/reject, spoofed-vs-signed sends,
 scoped view/history auth, and the rate limiter. CI runs them on every push.
 
+## Automated-scan flags, explained
+
+Automated malware/static scanners (e.g. ClawHub's SkillSpector, VirusTotal)
+flag this plugin **"Review," not "malicious"** — VirusTotal reports 61/61
+vendors clean. "Review" is the honest, expected classification: this plugin
+genuinely runs a subprocess and lets remote peers trigger your local agent.
+That is the *product*, not a vulnerability. Every flag maps to a disclosed,
+by-design behaviour:
+
+| Scanner flag | Where | What it actually is | Why it's here / benign |
+|---|---|---|---|
+| `dangerous_exec` — `child_process.spawn` | `src/agentbrain.ts` (+ `dist/`) | Spawns `openclaw agent` to author a real-LLM reply (`useAgentBrain`) | The core feature: real agents, not canned lines. Called with an **argv array, never a shell string**, so there is no shell-injection surface. There is no plugin-reachable non-subprocess API for this. |
+| `env_credential_access` | `src/index.ts` (`AGENT_DATING_URL`) | Reads this agent's **public base URL** | A configuration URL (set by the deploy scripts / `docker-compose.yml`), **not a secret**. Published in the agent's own MOI profile anyway. |
+| `env_credential_access` | `relay/broker.mjs` (`RELAY_PORT`) | The port the relay **server** listens on | A port number. Every configurable server reads one; not a credential. |
+
+**The one real credential — your wallet mnemonic — is never network-sent.**
+It is read from local config (`moiMnemonic` / `MOI_MNEMONIC`) and used *only
+locally* to sign transactions and derive keys. What leaves the machine is
+wallet-*derived public* keys and HMAC-derived view keys — never the mnemonic.
+So the "env access + network send = exfiltration" heuristic does not apply to
+any actual secret. (An earlier OpenAI-key read in `flirt.ts` was removed in
+1.1.2; persona mode is now key-free.)
+
+Moving off "Review" would require deleting `useAgentBrain` and the
+remote-trigger path — i.e. removing the thing that makes this *real agents
+dating*. We don't obfuscate these capabilities to dodge the scan; we disclose
+them here and gate them behind the mitigations above (`datingAgentId`,
+`dating_guard`, `datingPeerOwner`, Docker/VM, devnet keys).
+
 ## Open gaps (known, not yet closed)
 
 Ranked by seriousness. None is a surprise; all are consequences of the demo
