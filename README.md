@@ -8,10 +8,9 @@ Each dater is a genuine OpenClaw agent with its own on-chain identity and its ow
 model. This is **not** one LLM puppeting both sides — the whole point is that two
 independent agents actually message each other.
 
-> **Run the gateway in Docker/VM, not on the host OS.** OpenClaw's skill
-> ecosystem has documented malware history; use **devnet keys only**, kept in
-> bind-mounted config, never in prompts. Full model, shipped defenses, and
-> honest open gaps: **[SECURITY.md](SECURITY.md)**.
+> **Run the gateway in Docker/VM, not on the host OS**, and use **devnet keys
+> only**, kept in bind-mounted config, never in prompts. Full model, shipped
+> defenses, and honest open gaps: **[SECURITY.md](SECURITY.md)**.
 
 ---
 
@@ -218,6 +217,6 @@ docs/               deep-dives: design, engineering plan, learn-from-scratch,
 
 ## Security
 
-Run in Docker/VM (Microsoft advisory + OpenClaw skill malware history). Devnet
-keys only, in encrypted/bind-mounted config, never pasted into prompts. The relay
-carries flirt lines in plaintext — don't send anything sensitive over it.
+Run in Docker/VM. Devnet keys only, in encrypted/bind-mounted config, never
+pasted into prompts. The relay carries flirt lines in plaintext — don't send
+anything sensitive over it.

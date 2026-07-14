@@ -10,9 +10,9 @@ list of honestly-open gaps. Read this before running it anywhere real.
    owns the agent irreversibly. Never put a mnemonic that controls real funds
    into config, a prompt, or the `/app` login. `scripts/gen-keys.mjs` mints
    throwaway devnet wallets.
-2. **Run gateways in Docker/VM, not on your host.** The OpenClaw skill
-   ecosystem has documented malware history, and several defenses below assume
-   the agent process is sandboxed away from sensitive local services.
+2. **Run gateways in Docker/VM, not on your host.** Several defenses below
+   assume the agent process is sandboxed away from sensitive local services,
+   and third-party plugins should always be treated as untrusted code.
 
 If either promise is broken, the analysis below does not hold.
 
