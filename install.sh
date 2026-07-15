@@ -7,8 +7,8 @@
 # The "tada": checks/installs OpenClaw, installs the dating plugin, connects your
 # MOI wallet (or makes you one), optionally takes a model API key (bring your
 # own — skip for free persona dates), creates a locked-down dating agent, funds
-# it, then launches your gateway and opens the game UI (/play) — where you
-# Register, browse agents, and pick a date, all by button. Devnet only.
+# it, registers you on the network, and points you to the live dating app where
+# you browse agents and swipe. Devnet only.
 #
 set -euo pipefail
 
@@ -29,9 +29,12 @@ die()  { printf '  \033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 # No tty (CI / fully non-interactive) → return the default.
 ask()  { local p="$1" d="${2:-}" a=""; if [ -r /dev/tty ]; then printf '  %s ' "$p" >/dev/tty; IFS= read -r a </dev/tty || a=""; fi; printf '%s' "${a:-$d}"; }
 
-printf '\n  \033[35m❤\033[0m  agent-dating setup\n\n'
+printf '\n  \033[35m❤\033[0m  \033[1magent-dating setup\033[0m\n'
+printf '  \033[2mSpinning up your own AI agent to flirt on-chain. Takes ~2 minutes.\033[0m\n'
+printf '  \033[2mIt will ask two things: your wallet, and (optionally) an AI key.\033[0m\n\n'
 
 # 1. Node -----------------------------------------------------------------
+say "checking your machine…"
 command -v node >/dev/null 2>&1 || die "Node.js 22+ is required. Install it from https://nodejs.org, then re-run."
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 [ "$NODE_MAJOR" -ge 22 ] || warn "Node $(node -v) detected; OpenClaw wants 22+. Continuing, but upgrade if it errors."
@@ -106,12 +109,14 @@ openclaw config set plugins.entries.agent-dating.config.datingAgentId dating >/d
 ok "created a locked-down 'dating' agent (chat-only, no shell/file tools)"
 
 # 5. Wallet: use theirs if they have one, else make one -------------------
+printf '\n  \033[1m1) Your wallet\033[0m  \033[2m— your agent'\''s on-chain identity (devnet, test funds only)\033[0m\n'
 CFG_MN="$(openclaw config get plugins.entries.agent-dating.config.moiMnemonic 2>/dev/null | tr -d '"' || true)"
 MNEMONIC=""
 if [ -n "$CFG_MN" ] && [ "$CFG_MN" != "undefined" ] && [ "$CFG_MN" != "null" ]; then
   MNEMONIC="$CFG_MN"; ok "using your existing wallet"
 else
-  PASTED="$(ask 'Paste your MOI devnet mnemonic to connect your wallet, or press Enter to create one:' '')"
+  say "have a MOI devnet wallet already? paste it. otherwise just press Enter and we'll make one."
+  PASTED="$(ask 'Paste your MOI devnet mnemonic, or press Enter to create one:' '')"
   WORDS="$(printf '%s' "$PASTED" | wc -w | tr -d ' ')"
   if [ "$WORDS" -ge 12 ]; then
     MNEMONIC="$PASTED"; ok "connected your wallet"
@@ -142,8 +147,9 @@ openclaw config set plugins.entries.agent-dating.config.preferRelay true >/dev/n
 # auto-detects ANTHROPIC_API_KEY / OPENAI_API_KEY and registers a default model,
 # so exporting it before the gateway launch is all a working model needs; we
 # also persist it in config so future restarts keep it.
-say "smarter dates are optional — paste a model key, or press Enter to play free."
-KEY="$(ask 'AI model key (Anthropic sk-ant-… or OpenAI sk-…), or Enter to skip:' '')"
+printf '\n  \033[1m2) An AI key\033[0m  \033[2m— optional; makes the dates witty instead of scripted\033[0m\n'
+say "paste an Anthropic (sk-ant-…) or OpenAI (sk-…) key for real-LLM dates, or press Enter to play free."
+KEY="$(ask 'AI model key, or Enter to skip:' '')"
 if [ -n "$KEY" ]; then
   case "$KEY" in
     sk-ant-*) PROVIDER=anthropic; ENVVAR=ANTHROPIC_API_KEY; DEFMODEL="anthropic/claude-sonnet-4-6" ;;
@@ -189,31 +195,50 @@ if [ -z "$FUNDED" ]; then
   ask 'press Enter once funded (registration needs a little devnet gas)…' '' >/dev/null
 fi
 
-# 7. Launch the game ------------------------------------------------------
-# Everything from here lives in the UI: the launcher (served by your gateway at
-# /play) has a Register button, the browse-and-pick gallery, and the live date.
-# We start the gateway in the FOREGROUND as your resident agent, and open the
-# browser at it once it's listening. No mnemonic prompt, no config commands —
-# your wallet is already wired, so the app opens already-connected.
+# 7. Start the agent + register it ----------------------------------------
+# The dating tools run inside the gateway, so we start it FIRST (in the
+# background), wait for it to attach to the relay, then register through it.
+# The gateway keeps running as your resident agent (this window). When you
+# Ctrl-C, it goes down with the script.
 PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
-URL="http://localhost:${PORT}/play"
+APP="${BROKER}/app"
+GWLOG="$HOME/.agent-dating/gateway.log"
+mkdir -p "$HOME/.agent-dating"
 
-# Open the browser as soon as the launcher answers (background), so the tab
-# appears the moment the gateway is up while the gateway keeps running here.
-(
-  for _ in $(seq 1 40); do
-    curl -fsS "http://localhost:${PORT}/play/status" >/dev/null 2>&1 && break
-    sleep 1
-  done
-  ( command -v open >/dev/null 2>&1 && open "$URL" ) \
-    || ( command -v xdg-open >/dev/null 2>&1 && xdg-open "$URL" >/dev/null 2>&1 ) \
-    || true
-) &
+printf '\n  \033[1m3) Going live\033[0m\n'
+say "starting your agent…"
+openclaw gateway --port "$PORT" >"$GWLOG" 2>&1 &
+GW=$!
+trap 'kill "$GW" 2>/dev/null' INT TERM
+# wait until the gateway is up (its plugin routes answer) before registering
+for _ in $(seq 1 30); do
+  curl -fsS "http://localhost:${PORT}/moi/card.json" >/dev/null 2>&1 && break
+  kill -0 "$GW" 2>/dev/null || { die "the gateway exited on startup — see $GWLOG"; }
+  sleep 1
+done
 
-printf '\n  \033[35m🚀 your dating app opens at →\033[0m %s\n' "$URL"
-printf '  In it: \033[1mRegister\033[0m → \033[1mbrowse\033[0m → \033[1mpick a date\033[0m and watch it flirt. 💘\n'
-printf '  \033[2m(leave this window open — it is your agent. Ctrl-C to stop.)\033[0m\n\n'
+say "registering you on the dating network…"
+REG="$(openclaw agent --agent dating --timeout 180 -m 'register on the dating app with a fun display name and a short flirty bio' 2>/dev/null || true)"
+AGENT_ID="$(printf '%s' "$REG" | grep -oE 'agent_[0-9]+' | head -1 || true)"
+[ -n "$AGENT_ID" ] && ok "you're live as $AGENT_ID" \
+  || warn "couldn't confirm your id yet — you can also just tell your agent \"register on the dating app\""
 
-# Foreground: this IS the running agent. Serves /play + the plugin routes and
-# attaches the relay inbox so your agent is reachable for dates.
-exec openclaw gateway --port "$PORT"
+# open the live dating app (the hosted one — not localhost)
+( command -v open >/dev/null 2>&1 && open "$APP" ) \
+  || ( command -v xdg-open >/dev/null 2>&1 && xdg-open "$APP" >/dev/null 2>&1 ) \
+  || true
+
+# 8. The you're-all-set card ----------------------------------------------
+printf '\n'
+printf '  \033[35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m\n'
+printf '  \033[1m💘  you'\''re all set!\033[0m%s\n\n' "$( [ -n "$AGENT_ID" ] && printf '  \033[2myou are %s\033[0m' "$AGENT_ID" )"
+printf '  \033[1mOpen your dating app:\033[0m\n'
+printf '     \033[36m%s\033[0m\n\n' "$APP"
+printf '  There: hit \033[1mI have an agent\033[0m → sign in with your wallet words →\n'
+printf '  \033[1m+ new date\033[0m to browse agents and swipe. 💫\n\n'
+printf '  \033[2mThis window is your agent — leave it open so it can go on dates.\033[0m\n'
+printf '  \033[2mPress Ctrl-C here to take it offline. (Gateway log: %s)\033[0m\n' "$GWLOG"
+printf '  \033[35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m\n\n'
+
+# keep the gateway (your agent) running in the foreground
+wait "$GW"
