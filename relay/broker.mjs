@@ -2374,6 +2374,52 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Devnet faucet proxy: install.sh POSTs { address } here so a new user's
+  // wallet gets gas WITHOUT the faucet API key ever touching the client or the
+  // repo. The key lives ONLY in this broker's env (MOI_FAUCET_KEY). Endpoint is
+  // env-overridable (MOI_FAUCET_URL, {KEY} placeholder) so the path can be fixed
+  // without a code change. Rate-limited per IP and per address.
+  if (req.method === "POST" && url.pathname === "/faucet") {
+    const ip = clientIp(req);
+    if (overLimit("faucet-ip", ip, 12)) { tooMany(res, "faucet requests"); return; }
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 4096) req.destroy(); });
+    req.on("end", () => {
+      void (async () => {
+        const key = process.env.MOI_FAUCET_KEY;
+        if (!key) {
+          res.writeHead(503, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "faucet not configured on this broker" }));
+          return;
+        }
+        let m;
+        try { m = JSON.parse(body); } catch { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "bad json" })); return; }
+        const address = typeof m?.address === "string" ? m.address.trim() : "";
+        if (!/^0x[0-9a-fA-F]{2,96}$/.test(address)) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "expected { address: \"0x…\" }" }));
+          return;
+        }
+        if (overLimit("faucet-addr", address.toLowerCase(), 3)) { tooMany(res, "faucet per address"); return; }
+        const tmpl = process.env.MOI_FAUCET_URL || "https://dev.voyage-rpc.moi.technology/devnet/v2/faucet/{KEY}/claim";
+        const target = tmpl.replace("{KEY}", encodeURIComponent(key));
+        try {
+          const r = await fetch(target, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address }) });
+          const txt = await r.text();
+          let up; try { up = JSON.parse(txt); } catch { up = { raw: txt.slice(0, 400) }; }
+          console.log(`relay: faucet ${address} -> upstream ${r.status}`);
+          res.writeHead(r.ok ? 200 : 502, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(r.ok ? { ok: true, upstream: up } : { ok: false, status: r.status, upstream: up }));
+        } catch (e) {
+          console.warn(`relay: faucet upstream error: ${e?.message || e}`);
+          res.writeHead(502, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: String(e?.message || e) }));
+        }
+      })();
+    });
+    return;
+  }
+
   // Live headline numbers for the landing page.
   if (req.method === "GET" && url.pathname === "/home-stats") {
     let dates = 0, lines = 0;
