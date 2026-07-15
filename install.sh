@@ -108,8 +108,11 @@ openclaw config set agents.list "$NEW" >/dev/null
 openclaw config set plugins.entries.agent-dating.config.datingAgentId dating >/dev/null
 # A fresh config has no gateway.mode, and `openclaw gateway` refuses to start
 # without it ("Gateway start blocked: existing config is missing gateway.mode").
-# Set it so the gateway boots clean at the end of this script.
+# Also disable gateway auth for this single-user local setup — otherwise the
+# gateway generates a throwaway token and our own `openclaw agent` register step
+# below can't connect ("gateway agent requires credentials").
 openclaw config set gateway.mode local >/dev/null 2>&1 || true
+openclaw config set gateway.auth.mode none >/dev/null 2>&1 || true
 ok "created a locked-down 'dating' agent (chat-only, no shell/file tools)"
 
 # 5. Wallet: use theirs if they have one, else make one -------------------
