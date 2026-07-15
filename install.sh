@@ -106,6 +106,10 @@ NEW="$(node -e '
 ' "$CUR" 2>/dev/null || echo '[{"id":"main"},{"id":"dating","tools":{"profile":"minimal","deny":["group:runtime","group:fs"]}}]')"
 openclaw config set agents.list "$NEW" >/dev/null
 openclaw config set plugins.entries.agent-dating.config.datingAgentId dating >/dev/null
+# A fresh config has no gateway.mode, and `openclaw gateway` refuses to start
+# without it ("Gateway start blocked: existing config is missing gateway.mode").
+# Set it so the gateway boots clean at the end of this script.
+openclaw config set gateway.mode local >/dev/null 2>&1 || true
 ok "created a locked-down 'dating' agent (chat-only, no shell/file tools)"
 
 # 5. Wallet: use theirs if they have one, else make one -------------------
