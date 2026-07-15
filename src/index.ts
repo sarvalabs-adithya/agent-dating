@@ -716,20 +716,38 @@ export default definePluginEntry({
             if (!ok) console.warn(`agent-dating: reply to ${m.from} was NOT delivered — their inbox stream is gone from the relay (id ${m.id ?? "none"})`);
           })();
         },
-        // Owner control: the app's "Go on a date" button. The broker already
-        // verified the owner's view key before delivering this, so a command on
-        // our own inbox is trusted — run the same date loop the tool runs.
+        // Owner control: the app's buttons. The broker already verified the
+        // owner's view key before delivering this, so a command on our own
+        // inbox is trusted — run the same paths the tools run.
         (c) => {
-          if (c.cmd !== "date" || !c.peer) return;
-          if (commandDateInFlight) {
-            console.log(`agent-dating: ignoring date command for ${c.peer} — a command-started date is already running`);
+          if (c.cmd === "date") {
+            if (!c.peer) return;
+            if (commandDateInFlight) {
+              console.log(`agent-dating: ignoring date command for ${c.peer} — a command-started date is already running`);
+              return;
+            }
+            commandDateInFlight = true;
+            console.log(`agent-dating: owner command — starting a date with ${c.peer}`);
+            void runDate({ moiAgentId: c.peer })
+              .catch((e: any) => console.warn(`agent-dating: command date failed: ${e?.message || e}`))
+              .finally(() => { commandDateInFlight = false; });
             return;
           }
-          commandDateInFlight = true;
-          console.log(`agent-dating: owner command — starting a date with ${c.peer}`);
-          void runDate({ moiAgentId: c.peer })
-            .catch((e: any) => console.warn(`agent-dating: command date failed: ${e?.message || e}`))
-            .finally(() => { commandDateInFlight = false; });
+          if (c.cmd === "deprecate") {
+            // The app's "Retire this agent" button. Deprecate ONLY the id this
+            // command arrived on (`id`), never the whole wallet — so retiring
+            // one profile can't take down the owner's other live agents.
+            console.log(`agent-dating: owner command — deprecating ${id} on-chain`);
+            void (async () => {
+              try {
+                const res = await deprecateMyAgents(resolveCreds(), id);
+                console.log(`agent-dating: deprecate ${id} → retired=[${res.deprecated.join(", ")}] failed=${res.failed.length}`);
+              } catch (e: any) {
+                console.warn(`agent-dating: command deprecate failed: ${e?.message || e}`);
+              }
+            })();
+            return;
+          }
         },
       );
     };

@@ -1321,6 +1321,58 @@ const APP_HTML = `<!doctype html>
       });
     }).catch(function(){ o.ov.remove(); toast("Couldn't load the leaderboard."); });
   }
+  // Manage / retire your agents. "Retire" removes the agent from this app
+  // (broker /forget, works even if its gateway is offline) and, when the agent
+  // IS online, deprecates it on-chain (broker /command → the agent signs the
+  // DEPRECATED tx for its own id). Use it to clean up an old profile.
+  function manageAgents(){
+    var o=panelOverlay("Your agents");
+    var ids=Object.keys(owned);
+    if(!ids.length){ var e=document.createElement("div"); e.className="pid"; e.textContent="No agents signed in."; o.p.appendChild(e); return; }
+    var intro=document.createElement("div"); intro.className="pid";
+    intro.textContent="Retire removes an agent from this app. If its gateway is running, it's also deprecated on-chain so discovery stops showing it. This can't be undone.";
+    o.p.appendChild(intro);
+    ids.forEach(function(id){
+      var row=document.createElement("div"); row.className="lb-row";
+      row.appendChild(avatar(id));
+      var nm=document.createElement("div"); nm.className="lb-name"; nm.appendChild(document.createTextNode(id)); row.appendChild(nm);
+      var btn=document.createElement("button"); btn.className="gbtn"; btn.textContent="Retire"; row.appendChild(btn);
+      btn.onclick=function(){
+        if(!confirm("Retire "+id+"? It's removed from the app (and deprecated on-chain if its gateway is running). This can't be undone.")) return;
+        btn.disabled=true; btn.textContent="retiring\\u2026";
+        retireAgent(id, function(ok, msg){
+          if(ok){ row.remove(); toast(msg||("Retired "+id)); if(!Object.keys(owned).length){ o.ov.remove(); location.reload(); } }
+          else { btn.disabled=false; btn.textContent="Retire"; toast(msg||"couldn't retire"); }
+        });
+      };
+      o.p.appendChild(row);
+    });
+  }
+  function retireAgent(id, done){
+    var key=owned[id];
+    // 1) Best-effort on-chain deprecate — only reaches the agent if its gateway
+    //    is live (delivered:true). Offline agents just skip this step.
+    fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent:id,key:key,cmd:"deprecate"})})
+      .then(function(r){ return r.json().catch(function(){ return {}; }); })
+      .then(function(cd){
+        var online=!!(cd&&cd.ok);
+        // 2) Always remove from the app — works whether or not it's online.
+        return fetch("/forget",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent:id,key:key})})
+          .then(function(r){ return r.json(); })
+          .then(function(fd){
+            if(!(fd&&fd.ok)){ done(false, fd&&fd.error?fd.error:"couldn't remove from the app"); return; }
+            delete owned[id]; delete inbox[id];
+            sessionStorage.setItem("datingAppAuth", JSON.stringify(owned));
+            sessionStorage.setItem("datingAppInbox", JSON.stringify(inbox));
+            Object.keys(convos).forEach(function(k){ if(convos[k]&&convos[k].agent===id) delete convos[k]; });
+            if(current&&!convos[current]) current=null;
+            try{ renderRail(); renderSide(); renderThread(); }catch(e){}
+            done(true, online?("Retired "+id+" \\u2014 removed + deprecating on-chain"):("Removed "+id+" from the app"));
+          });
+      })
+      .catch(function(){ done(false,"network error"); });
+  }
+
   // Browse gallery (Bumble-style): every online agent as a card with its face,
   // name, and bio. Pick one to open the thread and text as your agent.
   function openWith(peerId, ov){
@@ -1754,6 +1806,7 @@ const APP_HTML = `<!doctype html>
     $("who").innerHTML="";
     var lbl=document.createElement("span"); lbl.className="pill"; lbl.textContent=ids.join(" · "); $("who").appendChild(lbl);
     var lbb=document.createElement("button"); lbb.textContent="\\uD83C\\uDFC6"; lbb.title="Global wingman leaderboard"; lbb.onclick=showLeaderboard; $("who").appendChild(lbb);
+    var mg=document.createElement("button"); mg.textContent="\\u2699\\uFE0F"; mg.title="Manage / retire your agents"; mg.onclick=manageAgents; $("who").appendChild(mg);
     var out=document.createElement("button"); out.textContent="Sign out";
     out.onclick=function(){ sessionStorage.removeItem("datingAppAuth"); sessionStorage.removeItem("datingAppInbox"); sses.forEach(function(s){try{s.close()}catch(e){}}); location.hash=""; location.reload(); };
     $("who").appendChild(out);
@@ -2230,9 +2283,12 @@ const server = http.createServer((req, res) => {
       const agent = typeof m?.agent === "string" ? m.agent.trim() : "";
       const key = typeof m?.key === "string" ? m.key.trim() : "";
       const peer = typeof m?.peer === "string" ? m.peer.trim() : "";
-      if (!agent || !peer) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "expected { agent, peer, key }" })); return; }
+      const cmd = typeof m?.cmd === "string" && m.cmd.trim() ? m.cmd.trim() : "date";
+      if (cmd !== "date" && cmd !== "deprecate") { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "unknown command" })); return; }
+      // `date` needs a peer; `deprecate` acts on the agent itself.
+      if (!agent || (cmd === "date" && !peer)) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "expected { agent, key, peer? }" })); return; }
       // Only the owner (holder of the agent's view key) may spend its model
-      // turns / gas by starting a date.
+      // turns / gas (date) or retire it on-chain (deprecate).
       if (!viewAuthOk(agent, key)) {
         metrics.authFailures++;
         if (overLimit("af", ip, RL_AUTHFAIL_PER_IP)) { tooMany(res, "auth failures"); return; }
@@ -2240,10 +2296,55 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({ ok: false, error: "bad or missing view key for that agent" }));
         return;
       }
-      const delivered = deliver(agent, { from: "app", to: agent, id: null, kind: "command", cmd: "date", peer });
-      console.log(`relay: command date ${agent} → ${peer} delivered=${delivered}`);
+      const delivered = deliver(agent, { from: "app", to: agent, id: null, kind: "command", cmd, peer });
+      console.log(`relay: command ${cmd} ${agent}${peer ? " → " + peer : ""} delivered=${delivered}`);
       res.writeHead(delivered > 0 ? 200 : 404, { "Content-Type": "application/json" });
       res.end(JSON.stringify(delivered > 0 ? { ok: true } : { ok: false, error: "your agent isn't connected — is your gateway running?" }));
+    });
+    return;
+  }
+
+  // Owner control: "Retire this agent" removes an agent from the APP. The
+  // on-chain deprecate rides /command (only reachable while the agent's gateway
+  // is live); this purge is broker-local and works even when the agent is
+  // OFFLINE — it drops the stored view key / card / inbox key / leaderboard row
+  // / chat history, so the id stops matching wallet login and vanishes from
+  // /agents and the gallery. Owner-only: proven by the agent's view key.
+  if (req.method === "POST" && url.pathname === "/forget") {
+    const ip = clientIp(req);
+    if (overLimit("cmd-ip", ip, 30)) { tooMany(res, "commands per ip"); return; }
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 1 << 16) req.destroy(); });
+    req.on("end", () => {
+      let m;
+      try { m = JSON.parse(body); } catch { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "bad json" })); return; }
+      const agent = typeof m?.agent === "string" ? m.agent.trim() : "";
+      const key = typeof m?.key === "string" ? m.key.trim() : "";
+      if (!agent) { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "expected { agent, key }" })); return; }
+      if (!viewAuthOk(agent, key)) {
+        metrics.authFailures++;
+        if (overLimit("af", ip, RL_AUTHFAIL_PER_IP)) { tooMany(res, "auth failures"); return; }
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "bad or missing view key for that agent" }));
+        return;
+      }
+      // Drop the maps that make this id visible to the app. Deleting the view
+      // key is what un-links it from wallet login; the rest is tidy-up.
+      viewKeys.delete(agent); saveJsonMap(KEYS_FILE, viewKeys);
+      cards.delete(agent); saveJsonMap(CARDS_FILE, cards);
+      inboxKeys.delete(agent); saveJsonMap(IKEYS_FILE, inboxKeys);
+      leaderboard.delete(agent); saveJsonMap(LB_FILE, leaderboard);
+      // Rewrite persisted history without this agent's threads, and prune the
+      // in-memory ring + live feed so it leaves no trace in stats or replays.
+      const keep = history.filter((e) => !involves(e, agent));
+      const removed = history.length - keep.length;
+      history.length = 0; history.push(...keep);
+      for (let i = feed.length - 1; i >= 0; i--) if (involves(feed[i], agent)) feed.splice(i, 1);
+      try { fs.writeFileSync(HIST_FILE, keep.map((e) => JSON.stringify(e)).join("\n") + (keep.length ? "\n" : "")); }
+      catch (e) { console.warn(`relay: forget ${agent} — history rewrite failed: ${e?.message || e}`); }
+      console.log(`relay: forgot ${agent} from the app (removed ${removed} history events)`);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, removed }));
     });
     return;
   }
