@@ -1,0 +1,82 @@
+# Deploy the relay broker to the VPS on every master push that touches it.
+#
+# One-time setup (repo Settings → Secrets and variables → Actions):
+#   VPS_HOST     the VPS address (e.g. 187.124.119.232)
+#   VPS_USER     ssh user (root)
+#   VPS_SSH_KEY  a PRIVATE key whose public half is in the VPS's
+#                ~/.ssh/authorized_keys. Generate a dedicated one:
+#                  ssh-keygen -t ed25519 -f gh-deploy -N "" -C gh-deploy
+#                  ssh-copy-id -i gh-deploy.pub root@<VPS_HOST>
+#                then paste the contents of the PRIVATE file `gh-deploy`
+#                into the secret. Optional: VPS_PORT (defaults to 22).
+#
+# What a deploy does (scripts/vps-apply-broker.sh, run on the VPS):
+# syntax-check → keep running copy as .prev → atomic swap → install/refresh
+# the systemd unit → restart → poll /health → auto-rollback on failure.
+name: Deploy broker
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "relay/broker.mjs"
+      - "deploy/dating-relay.service"
+      - "scripts/vps-apply-broker.sh"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch: {}
+
+# Never two deploys racing over the same box.
+concurrency:
+  group: deploy-broker
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Broker syntax check
+        run: node --check relay/broker.mjs
+      - name: Integration tests (broker + hardening)
+        run: node --test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_PORT: ${{ secrets.VPS_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets are configured
+        run: |
+          if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ]; then
+            echo "::error::VPS_HOST / VPS_USER / VPS_SSH_KEY secrets not set — see the header of this workflow file."
+            exit 1
+          fi
+
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${VPS_PORT:-22}" -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Upload broker + unit
+        run: |
+          scp -i ~/.ssh/deploy_key -P "${VPS_PORT:-22}" \
+            relay/broker.mjs "$VPS_USER@$VPS_HOST:/root/dating-broker.mjs.new"
+          scp -i ~/.ssh/deploy_key -P "${VPS_PORT:-22}" \
+            deploy/dating-relay.service "$VPS_USER@$VPS_HOST:/root/dating-relay.service.new"
+
+      - name: Swap, restart, health-gate (auto-rollback)
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${VPS_PORT:-22}" "$VPS_USER@$VPS_HOST" 'sh -s' \
+            < scripts/vps-apply-broker.sh

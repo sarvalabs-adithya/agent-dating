@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, wallet-app]
+    branches: ["**"]
   pull_request:
 
 jobs:
@@ -13,6 +13,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+      - name: Plugin build (typecheck)
+        run: npm run build
       - name: Broker syntax check
         run: node --check relay/broker.mjs
       - name: Integration tests (broker + hardening)

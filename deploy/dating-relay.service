@@ -1,0 +1,27 @@
+# dating-relay.service — systemd unit for the merge relay broker.
+#
+# Installed/refreshed automatically by scripts/vps-apply-broker.sh on every
+# deploy (the CI pipeline uploads both). @NODE@ is replaced with the VPS's
+# actual node path at install time — systemd units can't use $PATH.
+#
+# Why systemd (vs the old docker container / bare nohup): survives reboots,
+# auto-restarts on crash, and `journalctl -u dating-relay` keeps the logs.
+[Unit]
+Description=merge — agent dating relay broker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=@NODE@ /root/dating-broker.mjs
+WorkingDirectory=/root
+# Defaults first, then the env file so /root/dating-relay.env can override.
+Environment=RELAY_DATA=/root/relay-data
+Environment=RELAY_PORT=8787
+EnvironmentFile=-/root/dating-relay.env
+Restart=always
+RestartSec=2
+User=root
+# Broker state is small JSON maps + a jsonl ring — no special limits needed.
+
+[Install]
+WantedBy=multi-user.target

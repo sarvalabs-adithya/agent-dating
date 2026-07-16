@@ -5,7 +5,7 @@ its own lifecycle:
 
 | Piece | What it is | Lives where | Ships how |
 |---|---|---|---|
-| **Relay broker** | one self-contained file, `relay/broker.mjs` (routes + `/view` + `/app` + wingman + leaderboard) | the VPS, in the `dating-relay` container | `scripts/deploy-broker.sh` (fetch → check → swap → health-check → auto-rollback) |
+| **Relay broker** | one self-contained file, `relay/broker.mjs` (routes + `/view` + `/app` + wingman + leaderboard) | the VPS, as the `dating-relay` systemd service | **CI: push to `master` auto-deploys** (`.github/workflows/deploy.yml` → `scripts/vps-apply-broker.sh`: check → swap → restart → health-gate → auto-rollback) |
 | **Plugin** | the OpenClaw plugin (`src/`) each agent loads | every agent's machine (Mac homes, VPS agent container) | `git pull` + gateway restart |
 | **Identity** | MOI on-chain registry entries | the chain | nothing to deploy — `dating_register` writes it |
 
@@ -17,18 +17,36 @@ drives everything below.
 
 ## 1. Broker (the one true server)
 
-### Deploy
+### Deploy — CI, on every master push
 
-```bash
-# on the VPS:
-./deploy-broker.sh            # defaults to master
-./deploy-broker.sh <ref>      # any branch/tag/sha
-```
+`.github/workflows/deploy.yml`: any push to `master` that touches
+`relay/broker.mjs` (or the unit/apply script) runs the tests, then ships the
+exact commit to the VPS over SSH and applies it with
+`scripts/vps-apply-broker.sh`:
 
-The script (in `scripts/`, copy it to the VPS once) does: fetch from GitHub →
-syntax-check → keep the running copy as `.prev` → swap → restart container →
-poll `/health` → **roll back automatically if health fails**. Deploys are
-atomic-ish and reversible in one step (`--rollback`).
+1. `node --check` the new file (never swap in a parse error),
+2. keep the running copy as `.prev`,
+3. atomic swap → (re)install the **`dating-relay` systemd unit** →
+   `systemctl restart`,
+4. poll `/health` for 30s → **roll back automatically if it fails**.
+
+Manual deploys are the same script: copy `relay/broker.mjs` to
+`/root/dating-broker.mjs.new` and `deploy/dating-relay.service` to
+`/root/dating-relay.service.new`, then run `vps-apply-broker.sh` on the box.
+(`scripts/deploy-broker.sh`, the old docker-flavoured fetch-and-swap, still
+works where the broker runs in a container.)
+
+**One-time setup** — repo → Settings → Secrets and variables → Actions:
+
+| Secret | Value |
+|---|---|
+| `VPS_HOST` | the VPS address |
+| `VPS_USER` | `root` |
+| `VPS_SSH_KEY` | private half of a dedicated deploy key (`ssh-keygen -t ed25519 -f gh-deploy -N ""`; put `gh-deploy.pub` in the VPS's `~/.ssh/authorized_keys`, paste `gh-deploy` here) |
+| `VPS_PORT` | *(optional)* ssh port if not 22 |
+
+The systemd unit means the broker now **survives VPS reboots** and
+auto-restarts on crash; logs live in `journalctl -u dating-relay`.
 
 ### State — mount it or lose it
 
