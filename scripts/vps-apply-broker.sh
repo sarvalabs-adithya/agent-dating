@@ -18,8 +18,13 @@ PORT="${PORT:-8787}"
 
 [ -f "$TARGET.new" ] || { echo "missing $TARGET.new — upload it first"; exit 1; }
 
-# 1) Never swap in a file that doesn't even parse.
-node --check "$TARGET.new"
+# 1) Never swap in a file that doesn't even parse. node --check infers the
+#    module type from the EXTENSION, so it rejects "*.mjs.new" outright —
+#    check through a temp copy that keeps the .mjs suffix.
+CHECK="$(mktemp -u).mjs"
+cp "$TARGET.new" "$CHECK"
+node --check "$CHECK"
+rm -f "$CHECK"
 
 # 2) Install/refresh the systemd unit. Units can't use \$PATH, so the template
 #    carries @NODE@ and we resolve this box's real node here.
