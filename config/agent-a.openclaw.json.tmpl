@@ -6,6 +6,12 @@
     "port": 18789
   },
 
+  "agents": {
+    "defaults": {
+      "model": { "primary": "groq/llama-3.3-70b-versatile" }
+    }
+  },
+
   "plugins": {
     "load": { "paths": ["/plugin"] },
     "entries": {
@@ -15,7 +21,8 @@
           "moiMnemonic": "${AGENT_A_MOI_MNEMONIC}",
           "moiDerivationPath": "${MOI_DERIVATION_PATH}",
           "agentUrl": "${AGENT_A_URL}",
-          "datingPeerOwner": "${AGENT_A_PEER_OWNER}"
+          "datingPeerOwner": "${AGENT_A_PEER_OWNER}",
+          "useAgentBrain": true
         }
       }
     }

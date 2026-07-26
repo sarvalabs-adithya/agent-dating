@@ -37,4 +37,8 @@ EXPOSE 18789 18889
 # --allow-unconfigured: start without a model provider configured (proven needed).
 # --auth none: OK only because compose publishes to host loopback; use
 #   --auth token if you ever tunnel a gateway to the internet (see config/NOTES.md).
-CMD ["sh", "-c", "openclaw gateway --allow-unconfigured --auth none"]
+#
+# On first boot, ensure the Groq provider is installed (idempotent: skips if the
+# `groq` plugin is already present in this container's writable config home). Auth
+# is via the GROQ_API_KEY env, which compose forwards. Then start the gateway.
+CMD ["sh", "-c", "openclaw plugins list 2>/dev/null | grep -qiw groq || openclaw plugins install @openclaw/groq-provider || true; exec openclaw gateway --allow-unconfigured --auth none"]
