@@ -10,18 +10,18 @@
 
   "models": {
     "providers": {
-      "groq": {
-        "baseUrl": "https://api.groq.com/openai/v1",
-        "apiKey": "${AGENT_B_GROQ_API_KEY}",
+      "openai": {
+        "baseUrl": "https://api.openai.com/v1",
+        "apiKey": "${OPENAI_API_KEY}",
         "api": "openai-completions",
-        "models": [{ "id": "llama-3.3-70b-versatile", "name": "Llama 3.3 70B" }]
+        "models": [{ "id": "gpt-4o-mini", "name": "GPT-4o mini" }]
       }
     }
   },
 
   "agents": {
     "defaults": {
-      "model": { "primary": "groq/llama-3.3-70b-versatile" }
+      "model": { "primary": "openai/gpt-4o-mini" }
     }
   },
 
