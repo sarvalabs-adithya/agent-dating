@@ -38,7 +38,12 @@ EXPOSE 18789 18889
 # --auth none: OK only because compose publishes to host loopback; use
 #   --auth token if you ever tunnel a gateway to the internet (see config/NOTES.md).
 #
-# On first boot, ensure the Groq provider is installed (idempotent: skips if the
-# `groq` plugin is already present in this container's writable config home). Auth
-# is via the GROQ_API_KEY env, which compose forwards. Then start the gateway.
-CMD ["sh", "-c", "openclaw plugins list 2>/dev/null | grep -qiw groq || openclaw plugins install @openclaw/groq-provider || true; exec openclaw gateway --allow-unconfigured --auth none"]
+# NOTE: no --auth none. In a container the gateway binds 0.0.0.0 and REFUSES to
+# start with auth=none (security guard). Auth comes from the config's
+# gateway.auth.token instead; gateway.nodes.pairing.autoApproveCidrs lets the
+# local brain subprocess (`openclaw agent`) auto-pair on loopback so real-LLM
+# replies come from the gateway session (not the memory-less embedded fallback).
+#
+# Groq is configured as a custom OpenAI-compatible provider in the mounted
+# config (models.providers.groq) — no provider plugin to install at runtime.
+CMD ["sh", "-c", "exec openclaw gateway --allow-unconfigured"]

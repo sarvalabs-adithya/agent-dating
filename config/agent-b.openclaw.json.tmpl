@@ -3,7 +3,20 @@
     "mode": "local",
     "bind": "custom",
     "customBindHost": "0.0.0.0",
-    "port": 18889
+    "port": 18889,
+    "auth": { "mode": "token", "token": "dating-loopback-b" },
+    "nodes": { "pairing": { "autoApproveCidrs": ["127.0.0.1/32", "::1/128"] } }
+  },
+
+  "models": {
+    "providers": {
+      "groq": {
+        "baseUrl": "https://api.groq.com/openai/v1",
+        "apiKey": "${AGENT_B_GROQ_API_KEY}",
+        "api": "openai-completions",
+        "models": [{ "id": "llama-3.3-70b-versatile", "name": "Llama 3.3 70B" }]
+      }
+    }
   },
 
   "agents": {

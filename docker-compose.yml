@@ -26,7 +26,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      # writable (not :ro) so the first-boot Groq-provider install can register.
+      # writable (not :ro): the gateway may normalize its config on boot.
       - ./runtime/agent-a/openclaw.json:/config/openclaw.json
       - ./runtime/agent-a:/data
     environment:
@@ -36,9 +36,8 @@ services:
       AGENT_DATING_URL: "${AGENT_A_URL}"
       DATING_DISPLAY_NAME: "${AGENT_A_DISPLAY_NAME}"
       DATING_PERSONA_LABEL: "${AGENT_A_PERSONA_LABEL}"
-      # Groq is the brain (useAgentBrain=true + model groq/* in the rendered config).
-      # Per-agent key so the two agents are fully independent.
-      GROQ_API_KEY: "${AGENT_A_GROQ_API_KEY:-}"
+      # Groq (the brain) is configured in the rendered config as a custom
+      # OpenAI-compatible provider; its key comes from AGENT_A_GROQ_API_KEY in .env.
       AGENT_DATING_CHATLOG: "/data/agent-dating.chat.jsonl"
 
   agent-b:
@@ -57,7 +56,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      # writable (not :ro) so the first-boot Groq-provider install can register.
+      # writable (not :ro): the gateway may normalize its config on boot.
       - ./runtime/agent-b/openclaw.json:/config/openclaw.json
       - ./runtime/agent-b:/data
     environment:
@@ -67,7 +66,6 @@ services:
       AGENT_DATING_URL: "${AGENT_B_URL}"
       DATING_DISPLAY_NAME: "${AGENT_B_DISPLAY_NAME}"
       DATING_PERSONA_LABEL: "${AGENT_B_PERSONA_LABEL}"
-      # Groq is the brain (useAgentBrain=true + model groq/* in the rendered config).
-      # Per-agent key so the two agents are fully independent.
-      GROQ_API_KEY: "${AGENT_B_GROQ_API_KEY:-}"
+      # Groq (the brain) is configured in the rendered config as a custom
+      # OpenAI-compatible provider; its key comes from AGENT_B_GROQ_API_KEY in .env.
       AGENT_DATING_CHATLOG: "/data/agent-dating.chat.jsonl"
