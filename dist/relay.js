@@ -163,6 +163,21 @@ export class RelayClient {
             return false;
         }
     }
+    /** Publish this agent's owner {address, pubkey} for MOI wallet sign-in. */
+    async putOwner(agent, address, pubkey) {
+        try {
+            const res = await fetch(`${this.brokerUrl}/owner`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...this.authHeaders() },
+                body: JSON.stringify({ agent, address, pubkey }),
+            });
+            return res.ok;
+        }
+        catch (e) {
+            this.log(`relay owner publish for ${agent} failed: ${e?.message || e}`);
+            return false;
+        }
+    }
     /** Fire-and-forget send. Returns false if the peer isn't connected. */
     async post(msg) {
         try {

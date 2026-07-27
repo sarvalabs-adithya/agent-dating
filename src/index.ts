@@ -47,6 +47,7 @@ import {
   newestAgentId,
   stashSelfCard,
   deprecateMyAgents,
+  ownerInfo,
 } from "./moi.js";
 import { buildAgentCard, parseInboundMessage, makeReply, sendMessage, probePeer } from "./a2a.js";
 import { nextFlirtLine, type Turn, type Persona } from "./flirt.js";
@@ -842,6 +843,19 @@ export default definePluginEntry({
     async function runRegister(params: { displayName: string; bio: string; fresh?: boolean }) {
         const creds = resolveCreds();
 
+        // Publish this agent's owner {address, pubkey} so the owner can sign in
+        // to /app with the MOI wallet extension (broker verifies a signed
+        // challenge against the pubkey). Best-effort; never blocks registration.
+        const publishOwner = async (id: string): Promise<void> => {
+          if (!relay) return;
+          try {
+            const o = await ownerInfo(creds);
+            await relay.putOwner(id, o.address, o.pubkey);
+          } catch (e: any) {
+            console.warn(`agent-dating: owner publish for ${id} failed: ${e?.message || e}`);
+          }
+        };
+
         // Idempotent path: reuse this wallet's current (newest ACTIVE) agent so
         // the identity is STABLE across restarts — re-registering every boot
         // churned out a new id each time (agent_17 → 33 → 35 …) and left a
@@ -872,6 +886,7 @@ export default definePluginEntry({
             const reusedCard = getSelfCardJson();
             if (relay && reusedCard) await relay.putCard(existing.agentId, reusedCard);
             const reusedViewUrl = await publishViewLink(existing.agentId, creds.mnemonic);
+            await publishOwner(existing.agentId);
             return {
               ok: true,
               agentId: existing.agentId,
@@ -907,6 +922,7 @@ export default definePluginEntry({
           await relay.putCard(walletAddress.toLowerCase(), freshCard);
         }
         const viewUrl = await publishViewLink(agentId, creds.mnemonic);
+        await publishOwner(agentId);
         return {
           ok: true,
           agentId,

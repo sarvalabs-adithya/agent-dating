@@ -56,8 +56,25 @@ opt-in flag (never hand out view keys to an unverified address).
 
 ## Status on this branch
 - [x] Design + MOI wallet API captured (this doc).
-- [x] Client connect module scaffolded — `relay/moi-wallet-connect.js`.
-- [ ] Wire the button into the `/app` login pane (broker.mjs template).
-- [ ] Plugin: publish `agentId -> ownerAddress` to the broker on register.
-- [ ] Broker: `/app/wallet-login` route + signature verification (crypto note).
-- [ ] Test against the real extension end-to-end.
+- [x] Client connect module — `relay/moi-wallet-connect.js` (also served by the
+      broker at `GET /moi-wallet-connect.js`).
+- [x] Wire the button into the `/app` login pane (broker.mjs) — "Connect MOI
+      Wallet" + handler; falls back to the words login when no extension.
+- [x] Plugin publishes `agentId -> {address, pubkey}` to the broker on register
+      (`ownerInfo` in moi.ts, `relay.putOwner`, called in both register paths).
+- [x] Broker `/owner` (store) + `/app/wallet-login` route with **signature
+      verification** via a soft `js-moi-wallet` import (throwaway Wallet used as
+      a stateless verifier; `verify(msg, sig, pubkey)`), challenge freshness +
+      returns the owner's view keys. Verified end-to-end locally (valid login
+      succeeds; tampered sig / stale challenge / unknown wallet all rejected).
+- [ ] **Test against the real MOI wallet extension** — the one thing left. The
+      broker's verifier round-trips with `Wallet.sign` output; confirm the
+      extension's `wallet.SignMessage` produces the same format (same MOI stack,
+      so expected to match, but unconfirmed without the extension).
+
+## Deploy note
+Wallet-login needs `js-moi-sdk` next to the broker (`npm i js-moi-sdk` in the
+broker's dir). Without it, `/app/wallet-login` returns 503 and the app uses the
+words login — the broker's zero-dep default is preserved. Also: wallet sign-in
+can **watch** (view keys); wingman/send still needs the words login (inbox keys
+are mnemonic-derived and never held by the broker).

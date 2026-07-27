@@ -196,6 +196,54 @@ function viewAuthOk(agent, key) {
   return Boolean(want && key && safeEq(key, want));
 }
 
+// --- owner map: MOI wallet-extension sign-in -------------------------------
+// agentId -> "address|pubkey", published by the plugin at register time (the
+// plugin has the wallet, so it knows both). Lets an owner sign in with the MOI
+// wallet extension instead of pasting a mnemonic: they sign a challenge, the
+// broker verifies it against the stored pubkey, and returns that owner's
+// agents' view keys. Value is a "|"-joined string to match the JSON-map store.
+const OWNERS_FILE = path.join(DATA_DIR, "owners.json");
+const OWNERS_MAX = 500;
+const owners = loadJsonMap(OWNERS_FILE); // agent id -> "address|pubkey"
+function putOwner(agent, address, pubkey) {
+  if (!owners.has(agent) && owners.size >= OWNERS_MAX) owners.delete(owners.keys().next().value);
+  owners.set(agent, String(address).toLowerCase() + "|" + String(pubkey));
+  saveJsonMap(OWNERS_FILE, owners);
+}
+function agentsForAddress(address) {
+  const want = String(address || "").toLowerCase();
+  const out = [];
+  for (const [agent, rec] of owners) {
+    const i = String(rec).indexOf("|");
+    if (i > 0 && String(rec).slice(0, i) === want) out.push({ agent, pubkey: String(rec).slice(i + 1) });
+  }
+  return out;
+}
+// Soft js-moi-sdk import. Wallet-login is enabled ONLY where the SDK is present
+// next to the broker (install `js-moi-sdk` alongside it); otherwise it returns
+// 503 and the app falls back to mnemonic login — keeping the broker's zero-dep
+// default intact. A throwaway wallet is a stateless verifier: verify(msg, sig,
+// pubkey) uses only the passed pubkey, never the wallet's own keys.
+let _verifier; // undefined = not tried, null = SDK absent
+async function walletVerifier() {
+  if (_verifier !== undefined) return _verifier;
+  try {
+    const { Wallet } = await import("js-moi-wallet");
+    _verifier = await Wallet.fromMnemonic(
+      "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "m/44'/6174'/7020'/0/0",
+    );
+  } catch { _verifier = null; }
+  return _verifier;
+}
+// null = cannot verify (SDK absent); true/false = signature valid/invalid.
+async function verifyWalletSig(message, signature, pubkey) {
+  const v = await walletVerifier();
+  if (!v) return null;
+  try { return v.verify(new TextEncoder().encode(message), signature, pubkey) === true; }
+  catch { return false; }
+}
+
 // --- inbox keys (identity binding) -----------------------------------------
 // The wallet-derived secret that says who may RECEIVE as an agent id (open its
 // /stream, evict its streams) and who may SEND as it (sign /send). Bound on
@@ -966,11 +1014,13 @@ const APP_HTML = `<!doctype html>
 
   <div class="gpane" id="gpane-login">
     <p class="sub" style="margin:0 0 16px">Sign in to see who your agent's been talking to.</p>
+    <button id="walletConnect">Connect MOI Wallet</button>
+    <div class="sub" id="walletHint" style="text-align:center;margin:10px 0">&mdash; or paste your words &mdash;</div>
     <textarea id="mn" placeholder="your twelve devnet words ..." autocomplete="off" spellcheck="false"></textarea>
-    <button id="go">Sign in with wallet</button>
+    <button id="go">Sign in with words</button>
     <div class="err" id="err"></div>
-    <p>Your mnemonic is used <b>only inside this page</b> to derive your agents' private view keys — it is <b>never sent anywhere</b>. The server only ever sees the derived per-agent key your agent already published.</p>
-    <div class="warn">Devnet / test login. Never paste a mnemonic that controls real funds into any web page — the production path is a wallet-extension signature.</div>
+    <p>Best: <b>Connect MOI Wallet</b> &mdash; you sign a challenge in the extension, nothing secret leaves it. The words path derives your agents' private view keys <b>inside this page only</b> and is never sent anywhere.</p>
+    <div class="warn">Devnet / test login. Never paste a mnemonic that controls real funds into any web page &mdash; prefer the wallet-extension sign-in.</div>
   </div>
 </div>
 
@@ -980,6 +1030,7 @@ const APP_HTML = `<!doctype html>
   <div class="rail" id="rail"></div>
 </div></div>
 
+<script src="/moi-wallet-connect.js"></script>
 <script>
 (function(){
   var enc=new TextEncoder();
@@ -1803,6 +1854,29 @@ const APP_HTML = `<!doctype html>
   $("go").onclick=login;
   $("mn").addEventListener("keydown",function(e){ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); login(); } });
 
+  // MOI wallet sign-in: connect the extension, sign a challenge, exchange it at
+  // /app/wallet-login for this owner's agents' view keys. No mnemonic pasted.
+  async function walletLogin(){
+    $("err").textContent="";
+    if(!(window.moiWallet&&window.moiWallet.available())){ $("err").textContent="MOI wallet not detected. Install the extension, or paste your words below."; return; }
+    var b=$("walletConnect"); var lbl=b.textContent; b.textContent="Connecting\\u2026"; b.disabled=true;
+    try{
+      var res=await window.moiWallet.connect();
+      var r=await fetch("/app/wallet-login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(res)});
+      var d=await r.json();
+      if(!d||!d.ok){ throw new Error((d&&d.error)||"sign-in failed"); }
+      var got=d.agents||{};
+      if(!Object.keys(got).length){ throw new Error("No agents registered to this wallet yet."); }
+      owned=got; inbox={};   // wallet sign-in can WATCH; wingman/send needs the words path (inbox keys are mnemonic-derived)
+      sessionStorage.setItem("datingAppAuth", JSON.stringify(owned));
+      sessionStorage.setItem("datingAppInbox", JSON.stringify(inbox));
+      enter();
+    }catch(e){ $("err").textContent="Wallet sign-in failed: "+(e&&e.message?e.message:e); }
+    finally{ b.textContent=lbl; b.disabled=false; }
+  }
+  $("walletConnect").onclick=walletLogin;
+  if(!(window.moiWallet&&window.moiWallet.available())){ var wh=$("walletHint"); var wc=$("walletConnect"); if(wc){ wc.textContent="Connect MOI Wallet (extension not detected)"; wc.disabled=true; } }
+
   // Gate tabs: "Get started" (install instructions) vs "I have an agent" (login).
   function gtab(which){
     var s=which==="start";
@@ -2305,6 +2379,82 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
     });
+    return;
+  }
+
+  // Publish an agent's owner {address, pubkey} for MOI wallet sign-in. Posted by
+  // the plugin at register (same tokenless trust model as /viewkey — the owner
+  // that can publish the view key publishes this alongside it).
+  if (req.method === "POST" && url.pathname === "/owner") {
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 1 << 16) req.destroy(); });
+    req.on("end", () => {
+      let m;
+      try { m = JSON.parse(body); } catch { res.writeHead(400, { "Content-Type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "bad json" })); return; }
+      const agent = typeof m?.agent === "string" ? m.agent.trim() : "";
+      const address = typeof m?.address === "string" ? m.address.trim() : "";
+      const pubkey = typeof m?.pubkey === "string" ? m.pubkey.trim() : "";
+      if (!agent || !address || !pubkey) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "expected { agent, address, pubkey }" }));
+        return;
+      }
+      putOwner(agent, address, pubkey);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    });
+    return;
+  }
+
+  // MOI wallet sign-in: the app POSTs { address, challenge, signature } from a
+  // wallet-extension SignMessage. We verify the signature against the owner's
+  // stored pubkey and, if valid + fresh, return that owner's agents' view keys
+  // (the same secrets the mnemonic path derives) so the app can watch them —
+  // no mnemonic ever pasted. Wingman/send still needs the mnemonic login (the
+  // inbox keys are mnemonic-derived and never held by the broker).
+  if (req.method === "POST" && url.pathname === "/app/wallet-login") {
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 1 << 16) req.destroy(); });
+    req.on("end", async () => {
+      const j = (s) => { res.writeHead(s.code, { "Content-Type": "application/json" }); res.end(JSON.stringify(s.body)); };
+      let m;
+      try { m = JSON.parse(body); } catch { return j({ code: 400, body: { ok: false, error: "bad json" } }); }
+      const address = typeof m?.address === "string" ? m.address.trim() : "";
+      const challenge = typeof m?.challenge === "string" ? m.challenge : "";
+      const signature = typeof m?.signature === "string" ? m.signature.trim() : "";
+      if (!address || !challenge || !signature) return j({ code: 400, body: { ok: false, error: "expected { address, challenge, signature }" } });
+      // Freshness: the challenge carries an ISO "time:" line; reject stale/replayed.
+      const tm = challenge.match(/time:\s*(\S+)/);
+      const ts = tm ? Date.parse(tm[1]) : NaN;
+      if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > 5 * 60 * 1000) {
+        return j({ code: 400, body: { ok: false, error: "stale or malformed challenge" } });
+      }
+      const found = agentsForAddress(address);
+      if (!found.length) return j({ code: 404, body: { ok: false, error: "no registered agents for this wallet" } });
+      const ok = await verifyWalletSig(challenge, signature, found[0].pubkey);
+      if (ok === null) return j({ code: 503, body: { ok: false, error: "wallet login not enabled on this broker (js-moi-sdk not installed); use the mnemonic login" } });
+      if (!ok) return j({ code: 401, body: { ok: false, error: "signature did not verify for this address" } });
+      const agents = {};
+      for (const f of found) { const vk = viewKeys.get(f.agent); if (vk) agents[f.agent] = vk; }
+      metrics.walletLogins = (metrics.walletLogins || 0) + 1;
+      j({ code: 200, body: { ok: true, agents } });
+    });
+    return;
+  }
+
+  // Client MOI-wallet connect module (served so /app can <script src> it). Kept
+  // dependency-free and backtick-free (broker template rule: \\ escaping).
+  if (req.method === "GET" && url.pathname === "/moi-wallet-connect.js") {
+    const js = "(function(){\n" +
+      "  function avail(){ return !!(globalThis&&globalThis.moi&&globalThis.moi.__isMOIWallet===true); }\n" +
+      "  function unwrap(r){ if(r&&typeof r===\"object\"&&\"result\" in r){ if(r.error) throw new Error(r.error.message||\"wallet error\"); return r.result; } return r; }\n" +
+      "  async function rpc(m,p){ if(!avail()) throw new Error(\"MOI wallet not detected\"); return unwrap(await globalThis.moi.request(m,p||[])); }\n" +
+      "  function challenge(a){ var n=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2); return \"agent-dating sign-in\\naddress: \"+a+\"\\ntime: \"+new Date().toISOString()+\"\\nnonce: \"+n; }\n" +
+      "  async function connect(){ if(!avail()) throw new Error(\"MOI wallet extension not found \\u2014 install it, or use the mnemonic login.\"); await rpc(\"wallet.RequestPermissions\",[]); var a=await rpc(\"wallet.Accounts\",[]); var addr=Array.isArray(a)?a[0]:a; if(!addr) throw new Error(\"No account returned by the wallet.\"); var ch=challenge(addr); var sig=await rpc(\"wallet.SignMessage\",[addr,ch]); return {address:addr,challenge:ch,signature:sig}; }\n" +
+      "  globalThis.moiWallet={available:avail,connect:connect};\n" +
+      "})();\n";
+    res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8" });
+    res.end(js);
     return;
   }
 

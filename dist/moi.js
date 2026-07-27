@@ -133,6 +133,20 @@ async function openRegistry(creds, cardUrlRef) {
     const registry = await AgentRegistry.init({ wallet, uploader });
     return { registry, wallet };
 }
+/**
+ * The owner's on-chain address + compressed public key. Published to the broker
+ * at register time so an owner can sign in with the MOI wallet extension: the
+ * broker verifies their login signature against this pubkey (see
+ * docs/MOI-WALLET-PLAN.md) and returns that owner's agents' view keys — no
+ * mnemonic pasted.
+ */
+export async function ownerInfo(creds) {
+    const wallet = await Wallet.fromMnemonic(creds.mnemonic, creds.derivationPath || DEFAULT_DERIVATION);
+    return {
+        address: (await wallet.getIdentifier()).toHex(),
+        pubkey: wallet.publicKey,
+    };
+}
 export async function registerOnMoi(opts) {
     const base = (opts.agentUrl || "").replace(/\/+$/, "");
     // On-chain `url` is the agent's BASE url; peers message it at `${url}/message`

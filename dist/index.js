@@ -34,7 +34,7 @@
 import { definePluginEntry, buildJsonPluginConfigSchema } from "openclaw/plugin-sdk/plugin-entry";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { Type } from "typebox";
-import { registerOnMoi, discoverDatingAgents, resolvePeerUrl, getSelfCardJson, getMyIdentifier, getMyActiveAgentIds, getMyCurrentAgentId, newestAgentId, stashSelfCard, deprecateMyAgents, } from "./moi.js";
+import { registerOnMoi, discoverDatingAgents, resolvePeerUrl, getSelfCardJson, getMyIdentifier, getMyActiveAgentIds, getMyCurrentAgentId, newestAgentId, stashSelfCard, deprecateMyAgents, ownerInfo, } from "./moi.js";
 import { buildAgentCard, parseInboundMessage, makeReply, sendMessage, probePeer } from "./a2a.js";
 import { nextFlirtLine } from "./flirt.js";
 import { appendChatEvent, readChatEvents, now } from "./chatlog.js";
@@ -739,6 +739,20 @@ export default definePluginEntry({
         // owner view link on the relay).
         async function runRegister(params) {
             const creds = resolveCreds();
+            // Publish this agent's owner {address, pubkey} so the owner can sign in
+            // to /app with the MOI wallet extension (broker verifies a signed
+            // challenge against the pubkey). Best-effort; never blocks registration.
+            const publishOwner = async (id) => {
+                if (!relay)
+                    return;
+                try {
+                    const o = await ownerInfo(creds);
+                    await relay.putOwner(id, o.address, o.pubkey);
+                }
+                catch (e) {
+                    console.warn(`agent-dating: owner publish for ${id} failed: ${e?.message || e}`);
+                }
+            };
             // Idempotent path: reuse this wallet's current (newest ACTIVE) agent so
             // the identity is STABLE across restarts — re-registering every boot
             // churned out a new id each time (agent_17 → 33 → 35 …) and left a
@@ -771,6 +785,7 @@ export default definePluginEntry({
                     if (relay && reusedCard)
                         await relay.putCard(existing.agentId, reusedCard);
                     const reusedViewUrl = await publishViewLink(existing.agentId, creds.mnemonic);
+                    await publishOwner(existing.agentId);
                     return {
                         ok: true,
                         agentId: existing.agentId,
@@ -803,6 +818,7 @@ export default definePluginEntry({
                 await relay.putCard(walletAddress.toLowerCase(), freshCard);
             }
             const viewUrl = await publishViewLink(agentId, creds.mnemonic);
+            await publishOwner(agentId);
             return {
                 ok: true,
                 agentId,

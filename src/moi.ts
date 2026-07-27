@@ -178,6 +178,21 @@ async function openRegistry(creds: MoiCreds, cardUrlRef?: { url?: string }) {
   return { registry, wallet };
 }
 
+/**
+ * The owner's on-chain address + compressed public key. Published to the broker
+ * at register time so an owner can sign in with the MOI wallet extension: the
+ * broker verifies their login signature against this pubkey (see
+ * docs/MOI-WALLET-PLAN.md) and returns that owner's agents' view keys — no
+ * mnemonic pasted.
+ */
+export async function ownerInfo(creds: MoiCreds): Promise<{ address: string; pubkey: string }> {
+  const wallet = await Wallet.fromMnemonic(creds.mnemonic, creds.derivationPath || DEFAULT_DERIVATION);
+  return {
+    address: (await wallet.getIdentifier()).toHex(),
+    pubkey: (wallet as unknown as { publicKey: string }).publicKey,
+  };
+}
+
 export async function registerOnMoi(opts: {
   displayName: string;
   bio: string;
