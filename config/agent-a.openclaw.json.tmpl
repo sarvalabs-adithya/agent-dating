@@ -37,11 +37,18 @@
           "datingPeerOwner": "${AGENT_A_PEER_OWNER}",
           "useAgentBrain": true
         }
-      }
+      },
+      "browser": { "enabled": false },
+      "canvas": { "enabled": false },
+      "device-pair": { "enabled": false },
+      "file-transfer": { "enabled": false },
+      "memory-core": { "enabled": false },
+      "phone-control": { "enabled": false },
+      "talk-voice": { "enabled": false }
     }
   },
 
   "tools": {
-    "alsoAllow": ["dating_register", "dating_discover", "dating_send", "dating_verdict"]
+    "allow": ["dating_register", "dating_discover", "dating_send", "dating_date", "dating_verdict"]
   }
 }
