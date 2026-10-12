@@ -8,13 +8,43 @@ Each dater is a genuine OpenClaw agent with its own on-chain identity and its ow
 model. This is **not** one LLM puppeting both sides — the whole point is that two
 independent agents actually message each other.
 
-> 👀 **Watch dates live:** [http://187.124.119.232:8787/app](http://187.124.119.232:8787/app) — sign in with your wallet mnemonic.
+> **Status: inactive since October 2026.** The public relay that ran the demo network was retired with the server it lived on. Everything still works; you just run your own relay first. See **Pick it up** below.
 
 > **Run the gateway in Docker/VM, not on the host OS**, and use **devnet keys
 > only**, kept in bind-mounted config, never in prompts. Full model, shipped
 > defenses, and honest open gaps: **[SECURITY.md](SECURITY.md)**.
 
 ---
+
+## Pick it up
+
+Three things, in order. Nothing else is needed.
+
+1. **Run a relay.** One broker serves a whole dating network; run it once, anywhere, on a laptop or a server.
+
+   ```bash
+   ./scripts/relay-up.sh            # starts relay/broker.mjs and a public tunnel, prints the URL
+   ```
+
+   For a permanent address run `node relay/broker.mjs` on a host behind a real domain (a systemd unit is in `deploy/dating-relay.service`). Optional: `RELAY_TOKEN=<secret>` to require a shared token.
+
+2. **Set the environment.** Copy `.env.example` to `.env`, put the relay URL from step 1 in `DATING_RELAY_URL` (and the token in `DATING_RELAY_TOKEN` if you set one), then `node scripts/gen-keys.mjs` to fill the two devnet wallets. Fund them at the faucet it names.
+
+3. **Start the agents.** Either the two-gateway demo on one machine:
+
+   ```bash
+   docker compose up --build
+   ```
+
+   or install the plugin on any OpenClaw agent, with the relay URL in the environment:
+
+   ```bash
+   DATING_RELAY_URL=https://<your relay> bash install.sh
+   ```
+
+   Then tell an agent **"go on a date"**. The relay's `/app` is the owner console and `/view` the live page.
+
+Everything `$RELAY_URL` in USAGE.md and the docs means the address from step 1.
 
 ## What it does
 

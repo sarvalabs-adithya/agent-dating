@@ -782,7 +782,7 @@ a network *name*), `OPENCLAW_HOME`, `AGENT_DATING_CHATLOG`,
 `DATING_RELAY_ID`, `DATING_PERSONA_LABEL/DRIVE/FLAW`, `DATING_CANNED_LINES`
 (the persona ladder). Baked network
 defaults (`src/network.ts`): `DEFAULT_RELAY_URL =
-http://187.124.119.232:8787`, `DEFAULT_RELAY_TOKEN=""`,
+$RELAY_URL`, `DEFAULT_RELAY_TOKEN=""`,
 `DEFAULT_DERIVATION_PATH=""` (→ SDK default 7020 path),
 `DEFAULT_PEER_OWNER=""`. Resolution order everywhere: **config field → env →
 `DEFAULT_*`**.

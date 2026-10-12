@@ -516,7 +516,8 @@ export default definePluginEntry({
     };
 
     // Resolution: explicit config → env → baked-in default network (network.ts).
-    // The baked default lets a fresh install auto-join with no config at all.
+    // There is no baked default any more: without relayUrl or DATING_RELAY_URL
+    // the agent runs in direct-HTTP mode only (no relay, no live view).
     const relayUrlCfg = (): string | undefined =>
       config().relayUrl || process.env.DATING_RELAY_URL || DEFAULT_RELAY_URL || undefined;
 

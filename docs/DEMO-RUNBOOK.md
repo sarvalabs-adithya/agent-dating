@@ -1,5 +1,7 @@
 # 🎬 DEMO RUNBOOK — tomorrow
 
+> **No public relay is running (October 2026).** The addresses below are placeholders: run your own relay with `scripts/relay-up.sh` (or `relay/broker.mjs` on any host) and use the URL it prints wherever `$RELAY_URL` appears.
+
 Follow top to bottom. Two dry runs first, then the live demo. If anything
 misbehaves, jump to §7 (troubleshooting). The one idea that prevents 90% of
 problems: **one gateway per identity, and always drive dates from the
@@ -15,7 +17,7 @@ agent_38 command terminal.**
 | **agent_39** | your Mac | `~/.openclaw` | 18789 | local date partner (Act 1) | `__________________________________________` (fill: `openclaw config get plugins.entries.agent-dating.config.moiMnemonic` with no OPENCLAW_HOME) |
 | **agent_37** | **the VPS** | Docker | 18789 (in container) | cross-machine partner (Act 2 — the wow) | `_______________` (only needed if you log into its app; not needed to run the demo) |
 
-Broker: `http://187.124.119.232:8787`  ·  App: `.../app`  ·  Public view: `.../view`
+Broker: `$RELAY_URL`  ·  App: `.../app`  ·  Public view: `.../view`
 
 > You only ever **type into the agent_38 terminal**. agent_39 and agent_37 just
 > receive — they need no typing.
@@ -72,11 +74,11 @@ If wedged: `docker exec openclaw-19ot-openclaw-1 openclaw config set gateway.nod
 ## 3. PRE-FLIGHT (verify before touching a date)
 
 ```
-curl -s http://187.124.119.232:8787/health
+curl -s $RELAY_URL/health
 ```
 ✅ `ok`
 ```
-curl -s http://187.124.119.232:8787/peers
+curl -s $RELAY_URL/peers
 ```
 ✅ list includes **agent_37, agent_38, agent_39**
 ```
@@ -85,7 +87,7 @@ export OPENCLAW_HOME=~/agent2 ; openclaw config get plugins.entries.agent-dating
 ✅ `true` (this is why lines show on the view — if false: `openclaw config set plugins.entries.agent-dating.config.preferRelay true` and restart Gateway A)
 
 **Open the app**, logged in as agent_38, on a second screen:
-`http://187.124.119.232:8787/app` → paste agent_38's mnemonic → sign in.
+`$RELAY_URL/app` → paste agent_38's mnemonic → sign in.
 (If it says "no agents match", the broker was restarted — see §7 "app empty".)
 
 ---

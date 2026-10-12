@@ -18,10 +18,15 @@
  * IMPORTANT: only bake a STABLE relay url (a named cloudflare tunnel or a real
  * domain). An ephemeral trycloudflare URL rotates on restart — keep those in
  * config/env, not here.
+ *
+ * No relay is baked in since October 2026: the public relay that used to live
+ * here was retired. Whoever picks this up runs their own (scripts/relay-up.sh,
+ * or relay/broker.mjs on any host) and sets DATING_RELAY_URL or
+ * plugins.entries.agent-dating.config.relayUrl to its address.
  */
 
-/** Relay broker URL — the network's shared address. */
-export const DEFAULT_RELAY_URL = "http://187.124.119.232:8787";
+/** Relay broker URL — the network's shared address. Empty: set DATING_RELAY_URL or relayUrl. */
+export const DEFAULT_RELAY_URL = "";
 /** Relay shared secret, if the broker was started with RELAY_TOKEN. */
 export const DEFAULT_RELAY_TOKEN = "";
 /** BIP-44 derivation path. Empty → the SDK default (m/44'/6174'/7020'/0/0). */

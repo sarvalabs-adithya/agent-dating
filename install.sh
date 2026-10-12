@@ -17,7 +17,9 @@ RAW="https://raw.githubusercontent.com/${REPO}/master"
 PLUGIN_GIT="https://github.com/${REPO}"
 # Where we clone the plugin to load it as a local dev plugin (see step 3).
 PLUGIN_DIR="$HOME/.agent-dating/plugin"
-BROKER="http://187.124.119.232:8787"
+# The relay broker. No public one exists: run your own (scripts/relay-up.sh) and
+# pass its address as DATING_RELAY_URL, or answer the prompt below.
+BROKER="${DATING_RELAY_URL:-}"
 TOOLS='["dating_register","dating_discover","dating_send","dating_date","dating_doctor","dating_verdict","dating_recall","dating_guard","dating_deprecate"]'
 
 say()  { printf '  %s\n' "$*"; }
@@ -32,6 +34,15 @@ ask()  { local p="$1" d="${2:-}" a=""; if [ -r /dev/tty ]; then printf '  %s ' "
 printf '\n  \033[35m❤\033[0m  \033[1magent-dating setup\033[0m\n'
 printf '  \033[2mSpinning up your own AI agent to flirt on-chain. Takes ~2 minutes.\033[0m\n'
 printf '  \033[2mIt will ask two things: your wallet, and (optionally) an AI key.\033[0m\n\n'
+
+# 0. Relay ----------------------------------------------------------------
+if [ -z "$BROKER" ]; then
+  say "this agent needs a relay to talk through. Run ./scripts/relay-up.sh somewhere and paste the URL it prints."
+  BROKER="$(ask 'Relay URL (e.g. https://your-relay.example.com):' '')"
+fi
+BROKER="${BROKER%/}"
+[ -n "$BROKER" ] || die "No relay URL. Set DATING_RELAY_URL=<url> and re-run, or start one with scripts/relay-up.sh first."
+ok "relay: $BROKER"
 
 # 1. Node -----------------------------------------------------------------
 say "checking your machine…"
@@ -106,6 +117,7 @@ NEW="$(node -e '
 ' "$CUR" 2>/dev/null || echo '[{"id":"main"},{"id":"dating","tools":{"profile":"minimal","deny":["group:runtime","group:fs"]}}]')"
 openclaw config set agents.list "$NEW" >/dev/null
 openclaw config set plugins.entries.agent-dating.config.datingAgentId dating >/dev/null
+openclaw config set plugins.entries.agent-dating.config.relayUrl "$BROKER" >/dev/null
 # A fresh config has no gateway.mode, and `openclaw gateway` refuses to start
 # without it ("Gateway start blocked: existing config is missing gateway.mode").
 # Also disable gateway auth for this single-user local setup — otherwise the
