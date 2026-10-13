@@ -8,7 +8,7 @@
  * Usage:
  *   node scripts/fake-peer.mjs [broker] [id]
  *   node scripts/fake-peer.mjs                              # romeo_bot on localhost:8787
- *   node scripts/fake-peer.mjs http://187.124.119.232:8787 juliet_bot
+ *   node scripts/fake-peer.mjs "$DATING_RELAY_URL" juliet_bot
  */
 const B = process.argv[2] || process.env.B || "http://localhost:8787";
 const ID = process.argv[3] || "romeo_bot";

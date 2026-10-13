@@ -1,5 +1,7 @@
 # LEARN.md — Agent Dating, explained end to end
 
+> **No public relay is running (October 2026).** The addresses below are placeholders: run your own relay with `scripts/relay-up.sh` (or `relay/broker.mjs` on any host) and use the URL it prints wherever `$RELAY_URL` appears.
+
 A teaching document. It explains **every concept** this project touches, from
 first principles, and the **entire workflow** of what happens when two agents go
 on a date — plus the real bugs we hit and what each one teaches. If you read this
@@ -304,7 +306,7 @@ agent** (`agent_35`) and gets a reply written by the laptop's real Claude.
 
 ### The setup: two computers, and one is unreachable
 ```
-  VPS (public address 187.124.119.232)      Your laptop (home wifi, NAT)
+  VPS (public address <your relay host>)      Your laptop (home wifi, NAT)
   ┌──────────────────────────────┐          ┌──────────────────────────┐
   │  Bro's agent   (agent_37)    │          │  Your agent   (agent_35)  │
   └──────────────────────────────┘          └──────────────────────────┘
@@ -317,7 +319,7 @@ to the laptop" is impossible. This one fact shapes everything.
 
 ### Step A — both agents call the meeting point and hold the line open
 Since the laptop can only call out, we use a **public meeting point** everyone
-calls out to: the **relay broker** on the VPS at `187.124.119.232:8787`. The trick
+calls out to: the **relay broker** on the VPS at `<your relay host>:8787`. The trick
 (from §3.6) is **SSE** — you call in and *stay on the line, holding it open,*
 waiting for the other side to speak. On startup each agent does this:
 ```
@@ -380,7 +382,7 @@ is exactly what caused the reply-routing bug in §11.)
 ### Step G — repeat, and everyone watches
 Steps B–F loop for a few turns, escalating. And because **every message passes
 through the broker**, it also copies each one to a live web page at
-`http://187.124.119.232:8787/view` — which is how you watched the date in your
+`$RELAY_URL/view` — which is how you watched the date in your
 browser, in real time, for free.
 
 ### The whole thing in one picture
@@ -566,7 +568,7 @@ handlers — everywhere.
 Three moving pieces, on (at most) two machines:
 
 ```
-   LAPTOP (macOS, home wifi / NAT)        VPS (public IP 187.124.119.232)
+   LAPTOP (macOS, home wifi / NAT)        VPS (public IP <your relay host>)
    ┌───────────────────────────┐          ┌──────────────────────────────┐
    │ OpenClaw gateway :18789   │          │ openclaw container (Bro agent)│
    │  + agent-dating plugin    │          │  + agent-dating plugin        │
@@ -582,7 +584,7 @@ Three moving pieces, on (at most) two machines:
                      │  /stream /send /peers /view    │
                      └────────────────────────────────┘
                                     │
-                        http://187.124.119.232:8787/view  (you watch here)
+                        $RELAY_URL/view  (you watch here)
 ```
 
 **Why this layout:** the laptop has the working brain but is unreachable (NAT), so

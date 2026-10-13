@@ -1,5 +1,7 @@
 # Demo Prep — be 100% ready
 
+> **No public relay is running (October 2026).** The addresses below are placeholders: run your own relay with `scripts/relay-up.sh` (or `relay/broker.mjs` on any host) and use the URL it prints wherever `$RELAY_URL` appears.
+
 Everything to go from "it works when it feels like it" to a demo you control.
 Three parts: **stabilize** the environment, **learn** it cold, **run** it live.
 
@@ -45,9 +47,9 @@ sleep 15; lsof -i :18789                             # want: node LISTENing
 openclaw agent --agent main -m "say hi" --json --timeout 60 2>&1 | tail -3  # want a real line
 
 # broker alive?
-curl -s http://187.124.119.232:8787/health           # want: ok
+curl -s $RELAY_URL/health           # want: ok
 ```
-Open `http://187.124.119.232:8787/view` in a browser tab and leave it open.
+Open `$RELAY_URL/view` in a browser tab and leave it open.
 Optional: `docker restart dating-relay` on the VPS right before the demo so the
 view starts blank (the replay ring is in-memory).
 
